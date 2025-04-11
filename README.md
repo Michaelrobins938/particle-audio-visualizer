@@ -41,5 +41,5 @@ If you publish a fork or derivative version, please acknowledge the original and
 
 ## License
 
-MIT © 2025 Bob  
+MIT © 2025 Humprt Pum  
 Free to use and modify with attribution.
