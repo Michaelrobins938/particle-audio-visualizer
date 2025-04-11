@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle Visualizer</title>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+        }
+        #audio-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1000;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        #audio-controls button,
+        #audio-controls select {
+            background: #333;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        #audio-controls button:hover,
+        #audio-controls select:hover {
+            background: #444;
+        }
+        #volume-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: white;
+        }
+        #volume {
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div id="audio-controls">
+        <button id="playPause">Play</button>
+        <select id="songSelect">
+            <option value="">Select song...</option>
+        </select>
+        <div id="volume-control">
+            <label for="volume">Volume:</label>
+            <input type="range" id="volume" min="0" max="1" step="0.1" value="0.5">
+        </div>
+    </div>
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

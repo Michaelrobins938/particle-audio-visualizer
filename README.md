@@ -6,10 +6,10 @@ It reacts to sound, frequency, and rhythm to create a dynamic audiovisual experi
 ## Demo
 
 Demo video: https://youtu.be/AroTkLpfSSA  
+(Add the correct link once the video is uploaded.)
 
 ## Running locally
 
-Requires internet connection to load external Three.js and dat.GUI modules.
 Requires Node.js: https://nodejs.org
 
 1. Open a terminal in the project folder
@@ -22,8 +22,6 @@ Requires Node.js: https://nodejs.org
     http://localhost:3000
 
 Alternatively, use the provided run.bat file (Windows only).
-
-For full setup instructions and advanced tips, see [README-setup.md](README-setup.md)
 
 ## Features
 
@@ -43,5 +41,5 @@ If you publish a fork or derivative version, please acknowledge the original and
 
 ## License
 
-MIT © 2025 Robert Rericha  
+MIT © 2025 Bob  
 Free to use and modify with attribution.
