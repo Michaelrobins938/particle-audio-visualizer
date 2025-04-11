@@ -1,5 +1,4 @@
-cd /d E:\THREE_projects\Particula
-start "" serve .
+@echo off
+start "" cmd /k "npx serve ."
 timeout /t 3 >nul
-start start chrome http://localhost:3000
-exit
+start "" chrome http://localhost:3000
