@@ -548,7 +548,7 @@ function generateNewNoiseScale(params, lastNoiseScale) {
         noiseStep = range / 2;
     }
 
-    // Zajistíme, že lastNoiseScale je v platném rozsahu
+    // LastNoiseScale valid range
     lastNoiseScale = Math.max(minNoiseScale, Math.min(lastNoiseScale, maxNoiseScale));
 
     const stepsUp = Math.floor((maxNoiseScale - lastNoiseScale) / noiseStep);
@@ -570,7 +570,7 @@ function generateNewNoiseScale(params, lastNoiseScale) {
     return newValue;
 }
 
-// Funkce pro reinicializaci částic do typovaných polí
+// Reinit particles
 function reinitializeParticlesForSphere(sphere, sphereParams, sphereGeometry) {
     console.log(`Reinitializing sphere ${sphere.index + 1} with ${sphereParams.particleCount} particles`);
 
@@ -645,14 +645,12 @@ function updateColorsForSphere(sphereParams, sphereGeometry, sphereColors) {
 const presets = JSON.parse(localStorage.getItem('presets')) || {}; // Uložené presety
 const defaultParams = []; // Pro ukládání výchozích hodnot každé sféry
 
-// Vytvoření HTML prvků pro presety
+// HTML elements presets
 
-// Deklarace proměnných předem
 let presetContainer = document.querySelector('#presetContainer');
 let presetInput, saveButton, resetButton, presetSelect, deleteButton, exportButton, importButton;
 
 if (!presetContainer) {
-    // Vytvoření kontejneru a prvků
     presetContainer = document.createElement('div');
     presetContainer.id = 'presetContainer';
     presetContainer.style.cssText = `
@@ -692,7 +690,6 @@ if (!presetContainer) {
     importButton.textContent = 'Import Presets';
     importButton.style.cssText = 'padding: 5px 10px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
 
-    // Připojení prvků do kontejneru
     presetContainer.appendChild(presetInput);
     presetContainer.appendChild(saveButton);
     presetContainer.appendChild(resetButton);
