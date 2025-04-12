@@ -14,7 +14,7 @@ function cleanupPreviousElements() {
     
     elementsToRemove.forEach(selector => {
         document.querySelectorAll(selector).forEach(element => {
-            if (selector !== '#presetContainer') { // Neodstraňuj presetContainer
+            if (selector !== '#presetContainer') {
                 element.remove();
             }
         });
@@ -25,7 +25,7 @@ function cleanupPreviousElements() {
             div.className?.includes('control') ||
             div.id?.includes('audio') ||
             div.className?.includes('audio')) && 
-            div.id !== 'presetContainer') { // Výjimka pro presety
+            div.id !== 'presetContainer') {
             div.remove();
         }
     });
@@ -34,20 +34,19 @@ function cleanupPreviousElements() {
 cleanupPreviousElements();
 console.log('Cleanup completed');
 
-// Nastavení pevné pozice pro GUI sfér a presety
+// Fixed position GUI and presets
 const guiAndPresetsStyleFix = document.createElement('style');
 guiAndPresetsStyleFix.textContent = `
-    /* Pevná pozice pro GUI sfér */
+    /* Fixed position GUI spheres */
     .dg.main {
         position: absolute !important;
-        top: 10px !important; /* Nastavení pozice nahoře */
-        right: 10px !important; /* Zarovnání napravo */
-        z-index: 1000 !important; /* Zajištění viditelnosti nad ostatními prvky */
+        top: 10px !important;
+        right: 10px !important;
+        z-index: 1000 !important;
     }
 
-    /* Upravíme kontejner pro presety */
     #presetContainer {
-        position: fixed !important; /* Pevné umístění */
+        position: fixed !important;
         top: 10px !important; 
         left: 10px !important;
         z-index: 1000 !important; 
@@ -55,17 +54,16 @@ guiAndPresetsStyleFix.textContent = `
         gap: 10px !important; 
     }
 
-    /* Upravíme jednotlivé prvky presetů */
     #presetContainer input[type="text"] {
-        flex: 1 1 auto; /* Dynamická šířka podle prostoru */
-        min-width: 150px; /* Minimální šířka */
+        flex: 1 1 auto;
+        min-width: 150px;
         padding: 5px;
         border-radius: 3px;
     }
 
     #presetContainer select, 
     #presetContainer button {
-        flex: 0 0 auto; /* Fixní velikost */
+        flex: 0 0 auto;
         padding: 5px;
         border-radius: 3px;
     }
@@ -88,9 +86,9 @@ console.log('Scene and renderer initialized');
 let audioContext;
 let analyser;
 let audioElement;
-let sourceNode = null; // Globální proměnná pro audio přehrávač
+let sourceNode = null;
 let micStream;
-let micSource = null; // Přidání nové globální proměnné
+let micSource = null;
 
 // Audio Controls Container
 const controls = document.createElement('div');
@@ -706,7 +704,7 @@ if (!presetContainer) {
     document.body.appendChild(presetContainer);
 }
 
-// Logika pro ukládání presetů
+// Save presets logic
 saveButton.onclick = () => {
     const presetName = presetInput.value.trim();
     if (!presetName) return;
@@ -715,16 +713,14 @@ saveButton.onclick = () => {
     updatePresetOptions();
 };
 
-// Logika pro reset nastavení
+// Reset logic
 resetButton.onclick = () => {
     spheres.forEach((sphere, index) => {
         const previousParticleCount = sphere.params.particleCount; // Uložíme původní počet částic
         
-        // Resetujeme parametry na defaultní hodnoty
         Object.assign(sphere.params, defaultParams[index]);
         sphere.particleSystem.visible = sphere.params.enabled;
 
-        // Pokud se počet částic změnil, reinicializujeme geometrii
         if (sphere.params.particleCount !== previousParticleCount) {
             const {
                 newPositions,
@@ -748,7 +744,6 @@ resetButton.onclick = () => {
             sphere.geometry.attributes.color.needsUpdate = true;
         }
 
-        // Aktualizace zobrazení GUI
         const sphereFolder = mainGui.__folders[`Sphere ${index + 1}`];
         if (sphereFolder) {
             sphereFolder.__controllers.forEach(controller => controller.updateDisplay());
@@ -759,7 +754,7 @@ resetButton.onclick = () => {
     mainGui.updateDisplay();
 };
 
-// Logika pro smazání presetu
+// Delete preset logic
 deleteButton.onclick = () => {
     const presetName = presetSelect.value;
     if (!presetName) {
@@ -780,7 +775,7 @@ deleteButton.onclick = () => {
     console.log(`Preset "${presetName}" byl smazán.`);
 };
 
-// Export presetů
+// Export presets
 exportButton.onclick = () => {
     const presetData = JSON.stringify(presets, null, 2);
     const blob = new Blob([presetData], { type: 'application/json' });
@@ -792,7 +787,7 @@ exportButton.onclick = () => {
     URL.revokeObjectURL(url);
 };
 
-// Import presetů
+// Import presets
 importButton.onclick = () => {
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -812,7 +807,7 @@ importButton.onclick = () => {
     fileInput.click();
 };
 
-// Logika pro načítání presetů
+// Upload presets logic
 presetSelect.onchange = () => {
     const presetName = presetSelect.value;
     if (!presetName) return;
@@ -822,10 +817,8 @@ presetSelect.onchange = () => {
     spheres.forEach((sphere, index) => {
         const previousParticleCount = sphere.params.particleCount; // Původní počet částic
 
-        // Aktualizace parametrů
         Object.assign(sphere.params, preset[index]);
 
-        // Zajištění kompatibility s novými parametry
         if (!('minFrequencyBeat' in sphere.params)) {
             sphere.params.minFrequencyBeat = sphere.params.minFrequency;
         }
@@ -833,13 +826,11 @@ presetSelect.onchange = () => {
             sphere.params.maxFrequencyBeat = sphere.params.maxFrequency;
         }
 
-        // --- PŘIDANÁ POJISTKA: Hned po načtení presetu si srovnáme min/max NoiseScale ---
         if (sphere.params.minNoiseScale >= sphere.params.maxNoiseScale) {
             console.warn(`Preset fix: minNoiseScale (${sphere.params.minNoiseScale}) >= maxNoiseScale (${sphere.params.maxNoiseScale}).`);
             sphere.params.maxNoiseScale = sphere.params.minNoiseScale + 0.1;
         }
 
-        // Pokud se počet částic změnil, reinicializujeme geometrii
         if (sphere.params.particleCount !== previousParticleCount) {
             const {
                 newPositions,
@@ -863,27 +854,23 @@ presetSelect.onchange = () => {
             sphere.geometry.attributes.color.needsUpdate = true;
         }
 
-        // Nastavení viditelnosti
         sphere.particleSystem.visible = sphere.params.enabled;
     });
 
-    mainGui.updateDisplay(); // Aktualizace GUI
+    mainGui.updateDisplay();
 };
 
-// Aktualizace roletky presetů
+// Roll presets
 function updatePresetOptions() {
-    // Vyčisti aktuální možnosti v selectu
     while (presetSelect.firstChild) {
         presetSelect.removeChild(presetSelect.firstChild);
     }
     
-    // Přidej výchozí možnost
     const defaultOption = document.createElement('option');
     defaultOption.textContent = 'Select preset';
     defaultOption.value = '';
     presetSelect.appendChild(defaultOption);
 
-    // Přidej uložené presety
     Object.keys(presets).forEach(name => {
         const option = document.createElement('option');
         option.textContent = name;
@@ -892,10 +879,10 @@ function updatePresetOptions() {
     });
 }
 
-// Vytvoříme jeden hlavní GUI panel
+// Main GUI panel
 const mainGui = new dat.GUI();
 
-// FOG PARAMS - přidáno do hlavního GUI
+// FOG PARAMS
 const fogParams = {
     enabled: true,
     color: '#000000',
@@ -903,7 +890,7 @@ const fogParams = {
     far: 3.7,
 };
 
-// Funkce pro aktualizaci fog
+// After fog update
 function updateFog() {
     if (!fogParams.enabled) {
         scene.fog = null;
@@ -915,23 +902,23 @@ function updateFog() {
     renderer.render(scene, camera); // Překreslení scény
 }
 
-// Inicializace fog na základě výchozích hodnot
+// Fog init
 if (fogParams.enabled) {
     updateFog();
 }
 
-// Přidáme do hlavního GUI
+// Adding to main GUI
 mainGui.add(fogParams, 'enabled').name('Fog Enabled').onChange(updateFog);
 mainGui.addColor(fogParams, 'color').name('Fog Color').onChange(updateFog);
 mainGui.add(fogParams, 'near', 0.1, 5, 0.1).name('Fog Near').onChange(updateFog);
 mainGui.add(fogParams, 'far', 0.1, 5, 0.1).name('Fog Far').onChange(updateFog);
 
-// Přidání hlavního GUI pro particleCount, který změní particleCount ve všech sférách
+// Main GUI particleCount
 mainGui.add({
-    globalParticleCount: 20000 // Výchozí hodnota
+    globalParticleCount: 20000
 }, 'globalParticleCount', 1000, 100000).step(1000).onChange(value => {
     spheres.forEach((sphere, index) => {
-        sphere.params.particleCount = value; // Aktualizace particleCount pro každou sféru
+        sphere.params.particleCount = value;
         const {
             newPositions,
             newColors,
@@ -969,17 +956,17 @@ const spheres = [];
 
 function createSphereVisualization(index) {
     
-    // Výchozí frekvenční pásma pro každou sféru
+    // Spheres default frequencies
     const defaultFrequencies = [
-        { minFrequency: 20, maxFrequency: 80 },  // Sub-basy
-        { minFrequency: 120, maxFrequency: 250 }, // Basy
-        { minFrequency: 250, maxFrequency: 800 }, // Střední frekvence
-        { minFrequency: 1000, maxFrequency: 4000 }, // Vysoké střední
-        { minFrequency: 5000, maxFrequency: 10000 } // Výšky
+        { minFrequency: 20, maxFrequency: 80 },  // Sub-bass
+        { minFrequency: 120, maxFrequency: 250 }, // Bass
+        { minFrequency: 250, maxFrequency: 800 }, // Mid
+        { minFrequency: 1000, maxFrequency: 4000 }, // High mid
+        { minFrequency: 5000, maxFrequency: 10000 } // High
     ];
 
     const sphereParams = {
-        enabled: index === 0, // Pouze sféra 1 (index 0) je při spuštění zapnutá
+        enabled: index === 0,
         sphereRadius: 1.0,
         innerSphereRadius: 0.25,
         rotationSpeed: 0.001,
@@ -991,13 +978,13 @@ function createSphereVisualization(index) {
         particleLifetime: 3.0,
         minFrequency: defaultFrequencies[index]?.minFrequency || 0,
         maxFrequency: defaultFrequencies[index]?.maxFrequency || 22050,
-        minFrequencyBeat: defaultFrequencies[index]?.minFrequency || 0, // Nový parametr
-        maxFrequencyBeat: defaultFrequencies[index]?.maxFrequency || 22050, // Nový parametr
+        minFrequencyBeat: defaultFrequencies[index]?.minFrequency || 0,
+        maxFrequencyBeat: defaultFrequencies[index]?.maxFrequency || 22050,
         noiseScale: 4.0,
         dynamicNoiseScale: true,
-        minNoiseScale: 0.5,       // Minimální hodnota dynamického noisescale
-        maxNoiseScale: 5.0,       // Maximální hodnota dynamického noisescale
-        noiseStep: 0.2,           // Velikost skoku noisescale
+        minNoiseScale: 0.5,       
+        maxNoiseScale: 5.0,       
+        noiseStep: 0.2,           
         noiseSpeed: 0.1,
         turbulenceStrength: 0.005,
         colorStart: '#ff3366',
@@ -1019,7 +1006,7 @@ function createSphereVisualization(index) {
     const maxLifetimes = new Float32Array(sphereParams.particleCount);
     const beatEffects = new Float32Array(sphereParams.particleCount);
 
-    // Inicializace částic do typovaných polí
+    // Init particles
     for (let i = 0; i < sphereParams.particleCount; i++) {
         const i3 = i * 3;
         const radius = THREE.MathUtils.lerp(0, sphereParams.sphereRadius, sphereParams.innerSphereRadius);
@@ -1065,7 +1052,7 @@ function createSphereVisualization(index) {
     const sphereParticleSystem = new THREE.Points(sphereGeometry, sphereMaterial);
     scene.add(sphereParticleSystem);
 
-    // Nastav viditelnost podle `enabled`
+    // Sphere visibility `enabled`
     sphereParticleSystem.visible = sphereParams.enabled;
 
     const sphere = {
@@ -1093,10 +1080,10 @@ function createSphereVisualization(index) {
         minTimeBetweenPeaks: 200
     };
 
-    // Aktualizace barev
+    // Colors update
     updateColorsForSphere(sphereParams, sphereGeometry, sphereColors);
 
-    // Vytvoříme GUI složku
+    // GUI folder
     const sphereFolder = mainGui.addFolder('Sphere ' + (index + 1));
 
     sphereFolder.add(sphere.params, 'particleCount', 1000, 100000).step(1000)
@@ -1130,7 +1117,7 @@ function createSphereVisualization(index) {
             sphere.material.size = value;
         });
 
-    if (index === 0) { // Tlačítko přidáme jen pro sféru 1
+    if (index === 0) { 
     sphereFolder.add({ copyToOthers: () => {
         for (let i = 1; i < spheres.length; i++) {
             Object.assign(spheres[i].params, JSON.parse(JSON.stringify(sphere.params)));
@@ -1207,7 +1194,7 @@ function createSphereVisualization(index) {
     sphereFolder.add(sphereParams, 'maxFrequency', 0, 22050).step(1).name('Max Frequency (Hz)')
         .onChange(value => sphereParams.maxFrequency = value);
 
-    // Nastavení defaultních hodnot do GUI
+    // GUI defaults
     const minFreqController = sphereFolder.__controllers.find(c => c.property === 'minFrequency');
     const maxFreqController = sphereFolder.__controllers.find(c => c.property === 'maxFrequency');
     if (minFreqController) minFreqController.setValue(sphereParams.minFrequency);
@@ -1273,15 +1260,15 @@ for (let i = 0; i < 5; i++) {
     spheres.push(sphereVis);
 }
 
-// Uložení výchozích hodnot sfér
+// Saving defaults spheres
 spheres.forEach(sphere => {
     defaultParams.push(JSON.parse(JSON.stringify(sphere.params)));
 });
 
-// Inicializace výběru presetů
+// Init presets
 updatePresetOptions();
 
-// Ujistíme se, že pouze sféra 1 (index 0) je povolená
+// Only sphere 1 allowed
 spheres.forEach((sphere, index) => {
     if (index !== 0) {
         sphere.params.enabled = false;
@@ -1325,20 +1312,17 @@ function animate(currentTime) {
     const deltaTime = lastTime ? (currentTime - lastTime) / 1000 : 0;
     lastTime = currentTime;
 
-    // Aktualizace rázových vln
+    // Beat wave update
     beatManager.update(deltaTime);
 
-    // Aktualizace každé sféry
+    // Sphere update
     spheres.forEach(sphere => {
         if (!sphere.params.enabled) return;
 
-        // Získání aktuálních dat z audio analýzy pro tuto sféru
         const audioData = getAudioData(sphere);
 
-        // Dynamická změna noisescale na základě peaků
         if (audioData.peakDetected) {
             if (sphere.params.dynamicNoiseScale) {
-                // Generování nové hodnoty noisescale
                 sphere.params.noiseScale = generateNewNoiseScale(
                     sphere.params,
                     sphere.lastNoiseScale
@@ -1349,15 +1333,15 @@ function animate(currentTime) {
 
         const { params, geometry, positions, velocities, basePositions, lifetimes, maxLifetimes, beatEffects } = sphere;
 
-        // Detekce beatu pro tuto sféru
+        // Beat detection sphere
         const beatDetected = audioData.rangeEnergyBeat > params.beatThreshold;
 
-        // Spuštění rázové vlny pro tuto sféru
+        // Beat wave sphere
         if (beatDetected && !beatManager.isWaveActive && params.beatStrength > 0) {
             beatManager.triggerWave(audioData.rangeEnergyBeat);
         }
 
-        // Update částic v rámci typovaných polí
+        // Update particles
         const pc = params.particleCount;
         for (let i = 0; i < pc; i++) {
             const i3 = i * 3;
@@ -1376,7 +1360,7 @@ function animate(currentTime) {
             // Update lifetime
             lt -= deltaTime;
 
-            // Výpočet noise
+            // Noise calc
             const ns = params.noiseScale;
             const speed = params.noiseSpeed;
             const timeFactor = currentTime * 0.001;
@@ -1408,17 +1392,17 @@ function animate(currentTime) {
                 }
             }
 
-            // Update pozic
+            // Update positions
             x += vx;
             y += vy;
             z += vz;
 
-            // tlumení rychlosti
+            // Slowing speed
             vx *= 0.98;
             vy *= 0.98;
             vz *= 0.98;
 
-            // Kontrola překročení radiusu
+            // Radius control
             const dist = Math.sqrt(x*x + y*y + z*z);
             if (dist > params.sphereRadius) {
                 const overflow = dist - params.sphereRadius;
@@ -1436,7 +1420,7 @@ function animate(currentTime) {
                 vz *= 0.9;
             }
 
-            // Pokud je částice mrtvá, resetujeme ji
+            // Reset of dead particles
             if (lt <= 0) {
                 const radius = THREE.MathUtils.lerp(0, params.sphereRadius, params.innerSphereRadius);
                 const theta = Math.random() * Math.PI * 2;
@@ -1461,7 +1445,6 @@ function animate(currentTime) {
                 basePositions[i3 + 2] = z;
             }
 
-            // Zápis zpět do polí
             positions[i3] = x;
             positions[i3 + 1] = y;
             positions[i3 + 2] = z;
@@ -1476,7 +1459,7 @@ function animate(currentTime) {
 
         geometry.attributes.position.needsUpdate = true;
 
-        // Dynamická rotace na základě hlasitosti
+        // Dyn rotation
         const { volume: smoothVolume, shouldUpdate } = getSmoothVolume(
             params, 
             sphere.lastValidVolume, 
@@ -1496,7 +1479,7 @@ function animate(currentTime) {
 
         sphere.particleSystem.rotation.y += sphere.lastRotationSpeed;
 
-        // Uložení poslední validní hlasitosti
+        // Saving volume
         if (shouldUpdate) sphere.lastValidVolume = smoothVolume;
     });
 
@@ -1512,11 +1495,10 @@ window.addEventListener('resize', () => {
 
 let controlsVisible = true; // Stav viditelnosti
 
-// Funkce pro přepínání viditelnosti všech ovládacích prvků
+// Switching control elements
 function toggleControlsVisibility() {
     controlsVisible = !controlsVisible;
 
-    // Výběr všech ovládacích prvků
     const allControls = document.querySelectorAll(
         '.controls-container, .dg.main, #audioControls, #presetContainer, #songSelect, #playPause, input[type="range"], button, select, input[type="text"]'
     );
@@ -1526,9 +1508,8 @@ function toggleControlsVisibility() {
     });
 }
 
-// Přidání event listeneru na kliknutí na volné místo
+// Event listener on click
 document.addEventListener('click', (event) => {
-    // Podmínka: Kliknutí mimo všechny ovládací prvky
     const clickedElement = event.target;
     if (!clickedElement.closest('.controls-container') && 
         !clickedElement.closest('.dg.main') &&
@@ -1544,7 +1525,6 @@ document.addEventListener('click', (event) => {
     }
 });
 
-// Oprava pozic ovládacích prvků při znovuzobrazení
 document.querySelectorAll('.controls-container, .dg.main, #audioControls, #presetContainer').forEach(control => {
     control.style.position = 'absolute';
 });
