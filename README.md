@@ -34,18 +34,18 @@ Alternatively, use the provided run.bat file (Windows only).
 
 ## Collaboration
 
-This is the official repository of the Particula project.  
-Feel free to experiment, modify, and contribute.
-Open a pull request, start a discussion, or fork the repo and experiment. If you build something cool, we’d love to see it – especially presets or entirely new directions.
-If you publish a fork or derivative version, please acknowledge the original and do not use the name "Particula" without permission.
+- This is the official repository of the Particula project.  
+- Feel free to experiment, modify, and contribute.
+- Open a pull request, start a discussion, or fork the repo and experiment. If you build something cool, we’d love to see it – especially presets or entirely new directions.
+- If you publish a fork or derivative version, please acknowledge the original and do not use the name "Particula" without permission.
 
 ## Ideas for Future Development
 
-Add a moving camera to enhance depth and immersion.
-Decouple the spheres from the center – let them float freely in 3D space.
-Try alternative shapes: rings, ellipsoids, toruses.
-Make the noise animation slow down or sync with tempo.
-Assign more particles to lower frequencies (logarithmic sound spectrum distribution).
+- Add a moving camera to enhance depth and immersion.
+- Decouple the spheres from the center – let them float freely in 3D space.
+- Try alternative shapes: rings, ellipsoids, toruses.
+- Make the noise animation slow down or sync with tempo.
+- Assign more particles to lower frequencies (logarithmic sound spectrum distribution).
 
 ## License
 
