@@ -36,8 +36,9 @@ Alternatively, use the provided run.bat file (Windows only).
 
 - This is the official repository of the Particula project.  
 - Feel free to experiment, modify, and contribute.
-- Open a pull request, start a discussion, or fork the repo and experiment. If you build something cool, we’d love to see it – especially presets or entirely new directions.
 - If you publish a fork or derivative version, please acknowledge the original and do not use the name "Particula" without permission.
+- Open a pull request, start a discussion, or fork the repo and experiment. If you build something cool, we’d love to see it – especially presets or entirely new directions.
+- Share your presets: https://github.com/Humprt/particula/issues/3
 
 ## Ideas for Future Development
 
