@@ -51,3 +51,9 @@ Alternatively, use the provided run.bat file (Windows only).
 
 MIT © 2025 Humprt Pum  
 Free to use and modify with attribution.
+
+## Credits
+
+Built by a human-AI duo:  
+**Humprt (vibe-coder)** and **Caroline (ChatGPT 4o)**  
+Born from long nights, experimental tweaks, and love for sound and visual poetry.
