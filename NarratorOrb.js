@@ -410,6 +410,8 @@ const tendrilFragmentShader = `
 
 class NarratorOrb {
     constructor(scene, camera, renderer, analyserNode = null, config = {}) {
+        console.log("NarratorOrb constructor called with:", { scene, camera, renderer, analyserNode, config });
+        
         this.scene = scene;
         this.camera = camera;
         this.renderer = renderer;
@@ -424,13 +426,18 @@ class NarratorOrb {
             ...config
         };
 
+        console.log("NarratorOrb config:", this.config);
+
         this.frequencyData = new Uint8Array(this.analyserNode ? this.analyserNode.frequencyBinCount : 1024);
+        console.log("Frequency data array size:", this.frequencyData.length);
 
         this.time = 0;
         this.breathingPhase = 0;
         this.lastAudioLevel = 0;
 
+        console.log("Creating nebula orb...");
         this.createNebulaOrb();
+        console.log("NarratorOrb creation complete");
     }
 
     createNebulaOrb() {

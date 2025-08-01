@@ -484,11 +484,15 @@ class AudiobookNarratorVisualizer {
     }
     
     initializeNarratorOrb() {
+        console.log("Initializing NarratorOrb...");
+        
         if (this.narratorOrb) {
+            console.log("Destroying existing NarratorOrb...");
             this.narratorOrb.destroy();
         }
         
         if (this.reflectionGroup) {
+            console.log("Removing reflection group...");
             this.scene.remove(this.reflectionGroup);
         }
         
@@ -501,23 +505,38 @@ class AudiobookNarratorVisualizer {
             baseHue: 200
         };
         
-        this.narratorOrb = new NarratorOrb(
-            this.scene,
-            this.camera,
-            this.renderer,
-            this.analyser,
-            orbConfig
-        );
+        console.log("Creating NarratorOrb with config:", orbConfig);
+        console.log("Scene:", this.scene);
+        console.log("Camera:", this.camera);
+        console.log("Renderer:", this.renderer);
+        console.log("Analyser:", this.analyser);
         
-        // Center the orb perfectly in view like the example
-        if (this.narratorOrb.orbGroup) {
-            this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
-            this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
+        try {
+            this.narratorOrb = new NarratorOrb(
+                this.scene,
+                this.camera,
+                this.renderer,
+                this.analyser,
+                orbConfig
+            );
+            
+            console.log("NarratorOrb created successfully:", this.narratorOrb);
+            
+            // Center the orb perfectly in view like the example
+            if (this.narratorOrb.orbGroup) {
+                console.log("Setting orb position and scale...");
+                this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
+                this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
+            } else {
+                console.error("NarratorOrb orbGroup is null!");
+            }
+            
+            this.createOrbReflection();
+            
+            console.log("NarratorOrb initialized with analyser:", !!this.analyser);
+        } catch (error) {
+            console.error("Error creating NarratorOrb:", error);
         }
-        
-        this.createOrbReflection();
-        
-        console.log("NarratorOrb initialized with analyser:", !!this.analyser);
     }
     
     createOrbReflection() {
