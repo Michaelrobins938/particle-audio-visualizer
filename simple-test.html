@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Three.js Test</title>
+</head>
+<body>
+    <h1>Three.js Import Test</h1>
+    <div id="output">Testing...</div>
+    
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        
+        try {
+            document.getElementById('output').textContent = 'Three.js loaded successfully! Version: ' + THREE.REVISION;
+            console.log('Three.js loaded:', THREE);
+        } catch (error) {
+            document.getElementById('output').textContent = 'Error loading Three.js: ' + error.message;
+            console.error('Import error:', error);
+        }
+    </script>
+</body>
+</html> 

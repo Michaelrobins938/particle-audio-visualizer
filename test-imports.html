@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Three.js Imports</title>
+</head>
+<body>
+    <h1>Testing Three.js Module Imports</h1>
+    <div id="status">Loading...</div>
+    
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+        import { EffectComposer } from 'https://unpkg.com/three@0.158.0/examples/jsm/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'https://unpkg.com/three@0.158.0/examples/jsm/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'https://unpkg.com/three@0.158.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+        import { GlitchPass } from 'https://unpkg.com/three@0.158.0/examples/jsm/postprocessing/GlitchPass.js';
+        import { ShaderPass } from 'https://unpkg.com/three@0.158.0/examples/jsm/postprocessing/ShaderPass.js';
+        
+        document.getElementById('status').textContent = 'All imports successful!';
+        console.log('Three.js version:', THREE.REVISION);
+        console.log('EffectComposer:', EffectComposer);
+        console.log('RenderPass:', RenderPass);
+        console.log('UnrealBloomPass:', UnrealBloomPass);
+        console.log('GlitchPass:', GlitchPass);
+        console.log('ShaderPass:', ShaderPass);
+    </script>
+</body>
+</html> 

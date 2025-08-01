@@ -1,0 +1,18 @@
+{
+  "name": "narrator-audio-particle-orb",
+  "version": "1.0.0",
+  "description": "Audiobook Narrator Orb - Cinematic Visualizer",
+  "main": "main.js",
+  "scripts": {
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "start": "npx http-server . -p 3000 -o"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "http-server": "^14.1.1"
+  },
+  "keywords": ["audio", "visualizer", "threejs", "particles"],
+  "author": "",
+  "license": "MIT"
+} 

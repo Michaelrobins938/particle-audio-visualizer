@@ -1,1531 +1,1292 @@
-import * as THREE from 'https://unpkg.com/three@0.136.0/build/three.module.js';
-import { AudioLoader, AudioListener, Audio, AudioAnalyser } from 'https://unpkg.com/three@0.136.0/build/three.module.js';
-import * as dat from 'https://cdn.jsdelivr.net/npm/dat.gui/build/dat.gui.module.js';
+import * as THREE from 'https://unpkg.com/three@0.150.1/build/three.module.js';
+import { NarratorOrb } from './NarratorOrb.js';
 
-console.log('Script started');
+console.log("Main.js loaded successfully");
 
-// Cleanup function
-function cleanupPreviousElements() {
-    const elementsToRemove = [
-        '#songSelect', '#playPause', '#volume', 
-        'button', 'select', '.dg.main', 'canvas', '.controls-container',
-        '#volumeControl', '#audioControls', '.audio-control'
-    ];
-    
-    elementsToRemove.forEach(selector => {
-        document.querySelectorAll(selector).forEach(element => {
-            if (selector !== '#presetContainer') {
-                element.remove();
-            }
-        });
-    });
-    
-    document.querySelectorAll('div').forEach(div => {
-        if ((div.id?.includes('control') || 
-            div.className?.includes('control') ||
-            div.id?.includes('audio') ||
-            div.className?.includes('audio')) && 
-            div.id !== 'presetContainer') {
-            div.remove();
-        }
-    });
-}
-
-cleanupPreviousElements();
-console.log('Cleanup completed');
-
-// Fixed position GUI and presets
-const guiAndPresetsStyleFix = document.createElement('style');
-guiAndPresetsStyleFix.textContent = `
-    /* Fixed position GUI spheres */
-    .dg.main {
-        position: absolute !important;
-        top: 10px !important;
-        right: 10px !important;
-        z-index: 1000 !important;
-    }
-
-    #presetContainer {
-        position: fixed !important;
-        top: 10px !important; 
-        left: 10px !important;
-        z-index: 1000 !important; 
-        display: flex !important; 
-        gap: 10px !important; 
-    }
-
-    #presetContainer input[type="text"] {
-        flex: 1 1 auto;
-        min-width: 150px;
-        padding: 5px;
-        border-radius: 3px;
-    }
-
-    #presetContainer select, 
-    #presetContainer button {
-        flex: 0 0 auto;
-        padding: 5px;
-        border-radius: 3px;
-    }
-`;
-document.head.appendChild(guiAndPresetsStyleFix);
-
-// Scene setup
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.z = 2.5;
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-console.log('Scene and renderer initialized');
-
-// Audio setup
-let audioContext;
-let analyser;
-let audioElement;
-let sourceNode = null;
-let micStream;
-let micSource = null;
-
-// Audio Controls Container
-const controls = document.createElement('div');
-controls.style.cssText = 'position: absolute; top: 10px; right: 310px; z-index: 1000; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px;';
-document.body.appendChild(controls);
-
-const audioControls = document.createElement('div');
-audioControls.style.cssText = 'display: flex; align-items: center; gap: 10px;';
-controls.appendChild(audioControls);
-
-const songSelect = document.createElement('select');
-songSelect.style.cssText = 'padding: 5px; border-radius: 3px; background: #333; color: white; border: 1px solid #666;';
-audioControls.appendChild(songSelect);
-
-const playPause = document.createElement('button');
-playPause.textContent = 'Play';
-playPause.style.cssText = 'padding: 5px 15px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
-audioControls.appendChild(playPause);
-
-const volumeControl = document.createElement('input');
-volumeControl.type = 'range';
-volumeControl.min = 0;
-volumeControl.max = 1;
-volumeControl.step = 0.1;
-volumeControl.value = 0.5;
-volumeControl.style.width = '100px';
-audioControls.appendChild(volumeControl);
-
-const timelineControl = document.createElement('input');
-timelineControl.type = 'range';
-timelineControl.min = 0;
-timelineControl.max = 100;
-timelineControl.step = 1;
-timelineControl.value = 0;
-timelineControl.style.width = '200px';  
-timelineControl.style.marginLeft = '10px';
-audioControls.appendChild(timelineControl);
-
-const inputToggle = document.createElement('button');
-inputToggle.textContent = 'Use Mic';
-inputToggle.style.cssText = 'padding: 5px 15px; border-radius: 3px; background: #444; color: white; border: 1px solid #666; margin-left: 10px;';
-audioControls.appendChild(inputToggle);
-
-let usingMic = false;
-inputToggle.onclick = toggleInput;
-
-playPause.onclick = togglePlay;
-songSelect.onchange = changeSong;
-
-console.log('Controls created');
-
-// Noise generator
-const noise = {
-    p: new Array(256).fill(0).map((_, i) => i),
-    perm: new Array(512),
-    
-    init() {
-        for (let i = this.p.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
-        }
-        for (let i = 0; i < 512; i++) {
-            this.perm[i] = this.p[i & 255];
-        }
-    },
-    
-    fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); },
-    lerp(t, a, b) { return a + t * (b - a); },
-    
-    grad(hash, x, y, z) {
-        const h = hash & 15;
-        const u = h < 8 ? x : y;
-        const v = h < 4 ? y : h == 12 || h == 14 ? x : z;
-        return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
-    },
-    
-    noise3D(x, y, z) {
-        const X = Math.floor(x) & 255;
-        const Y = Math.floor(y) & 255;
-        const Z = Math.floor(z) & 255;
+class AudiobookNarratorVisualizer {
+    constructor() {
+        console.log("Initializing visualizer...");
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.audioContext = null;
+        this.audioSource = null;
+        this.analyser = null;
+        this.gainNode = null;
+        this.narratorOrb = null;
+        this.starfield = null;
+        this.reflectionGroup = null;
+        this.reflectionCore = null;
+        this.reflectionTendrils = null;
+        this.animationId = null;
+        this.isPlaying = false;
+        this.currentAudio = null;
+        this.lastTime = 0;
+        this.audioLoaded = false;
         
-        x -= Math.floor(x);
-        y -= Math.floor(y);
-        z -= Math.floor(z);
+        // UI state
+        this.uiCollapsed = false;
+        this.autoHideTimeout = null;
+        this.isMouseOverUI = false;
         
-        const u = this.fade(x);
-        const v = this.fade(y);
-        const w = this.fade(z);
+        // Settings
+        this.settings = {
+            gain: 1.0,
+            particles: 50000,
+            intensity: 1.0,
+            volume: 0.5,
+            autoHideUI: true,
+            autoHideDelay: 3000 // 3 seconds
+        };
         
-        const A = this.perm[X] + Y;
-        const AA = this.perm[A] + Z;
-        const AB = this.perm[A + 1] + Z;
-        const B = this.perm[X + 1] + Y;
-        const BA = this.perm[B] + Z;
-        const BB = this.perm[B + 1] + Z;
-        
-        return this.lerp(w, this.lerp(v, this.lerp(u, this.grad(this.perm[AA], x, y, z),
-                                                     this.grad(this.perm[BA], x-1, y, z)),
-                                        this.lerp(u, this.grad(this.perm[AB], x, y-1, z),
-                                                  this.grad(this.perm[BB], x-1, y-1, z))),
-                           this.lerp(v, this.lerp(u, this.grad(this.perm[AA+1], x, y, z-1),
-                                                  this.grad(this.perm[BA+1], x-1, y, z-1)),
-                                     this.lerp(u, this.grad(this.perm[AB+1], x, y-1, z-1),
-                                               this.grad(this.perm[BB+1], x-1, y-1, z-1))));
+        this.init();
     }
-};
-noise.init();
-console.log('Noise initialized');
-
-// Beat manager
-const beatManager = {
-    currentWaveRadius: 0,
-    waveStrength: 0,
-    isWaveActive: false,
     
-    triggerWave(rangeEnergy) {
-        const maxEnergy = 255; 
-        const energyExcess = rangeEnergy - 200; 
-        this.waveStrength = (energyExcess / (maxEnergy - 200)) * 20.0;
-        this.currentWaveRadius = 0;
-        this.isWaveActive = true;
-    },
-    
-    update(deltaTime) {
-        if (this.isWaveActive) {
-            this.currentWaveRadius += deltaTime * 1.0;
-            this.waveStrength *= 0.98;
-            
-            if (this.currentWaveRadius > 1.0 || this.waveStrength < 0.1) {
-                this.isWaveActive = false;
-            }
-        }
-    },
-    
-    getWaveForce(position) {
-        if (!this.isWaveActive) return 0;
-        const distanceFromCenter = position.length();
-        const distanceFromWave = Math.abs(distanceFromCenter - this.currentWaveRadius);
-        if (distanceFromWave < 0.1) {
-            return this.waveStrength * Math.exp(-distanceFromWave * 10);
-        }
-        return 0;
-    }
-};
-
-async function toggleInput() {
-    
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 2048;
-    }
-    await audioContext.resume();
-    
-    if (usingMic) {
-        usingMic = false;
-        inputToggle.textContent = 'Use Mic';
-        songSelect.disabled = false;
-        playPause.disabled = false;
-        volumeControl.disabled = false;
-        timelineControl.disabled = false;
-
-        if (micSource) {
-            micSource.disconnect();
-            micSource = null;
-        }
-
-        if (sourceNode) {
-            sourceNode.connect(analyser);
-        }
-        analyser.connect(audioContext.destination);
-
-    } else {
-        usingMic = true;
-        inputToggle.textContent = 'Use Player';
-        songSelect.disabled = true;
-        playPause.disabled = true;
-        volumeControl.disabled = true;
-        timelineControl.disabled = true;
-
+    async init() {
         try {
-            micStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: false
+            this.setupScene();
+            this.setupAudio();
+            this.setupUI();
+            this.setupControls();
+            this.setupEventListeners();
+            this.loadPresets();
+            this.loadUIState();
+            console.log("Initialization complete");
+        } catch (error) {
+            console.error('Initialization failed:', error);
+        }
+    }
+    
+    setupUI() {
+        // Create collapse toggle button if it doesn't exist
+        this.createCollapseToggle();
+        
+        // Setup auto-hide functionality
+        this.setupAutoHide();
+        
+        // Setup UI hover detection
+        this.setupUIHoverDetection();
+    }
+    
+    createCollapseToggle() {
+        // Check if toggle button already exists
+        let toggleBtn = document.getElementById('uiToggle');
+        if (!toggleBtn) {
+            toggleBtn = document.createElement('button');
+            toggleBtn.id = 'uiToggle';
+            toggleBtn.className = 'ui-toggle';
+            toggleBtn.innerHTML = `
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18m-9-9l9 9-9 9"/>
+                </svg>
+            `;
+            toggleBtn.title = 'Toggle UI (T key)';
+            document.body.appendChild(toggleBtn);
+        }
+        
+        // Add styles for the toggle button
+        this.addToggleStyles();
+        
+        toggleBtn.addEventListener('click', () => {
+            this.toggleUI();
+        });
+    }
+    
+    addToggleStyles() {
+        // Check if styles already exist
+        if (document.getElementById('uiToggleStyles')) return;
+        
+        const style = document.createElement('style');
+        style.id = 'uiToggleStyles';
+        style.textContent = `
+            .ui-toggle {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                background: rgba(0, 0, 0, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                color: white;
+                padding: 12px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                backdrop-filter: blur(10px);
+            }
+            
+            .ui-toggle:hover {
+                background: rgba(0, 0, 0, 0.9);
+                border-color: rgba(255, 255, 255, 0.4);
+                transform: scale(1.05);
+            }
+            
+            .ui-toggle svg {
+                display: block;
+                transition: transform 0.3s ease;
+            }
+            
+            .ui-collapsed .ui-toggle svg {
+                transform: rotate(180deg);
+            }
+            
+            .ui-panel {
+                transition: all 0.3s ease;
+                transform: translateX(0);
+                opacity: 1;
+            }
+            
+            .ui-collapsed .ui-panel {
+                transform: translateX(100%);
+                opacity: 0;
+                pointer-events: none;
+            }
+            
+            .ui-collapsed .ui-panel.left-panel {
+                transform: translateX(-100%);
+            }
+            
+            .auto-hide .ui-panel {
+                opacity: 0.1;
+                transition: opacity 0.3s ease;
+            }
+            
+            .auto-hide .ui-panel:hover,
+            .auto-hide.ui-hover .ui-panel {
+                opacity: 1;
+            }
+            
+            .auto-hide .ui-toggle {
+                opacity: 0.3;
+            }
+            
+            .auto-hide .ui-toggle:hover {
+                opacity: 1;
+            }
+            
+            /* Minimize button for individual panels */
+            .panel-minimize {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(255, 255, 255, 0.1);
+                border: none;
+                border-radius: 4px;
+                color: white;
+                padding: 4px 8px;
+                cursor: pointer;
+                font-size: 12px;
+                opacity: 0.7;
+                transition: opacity 0.2s ease;
+            }
+            
+            .panel-minimize:hover {
+                opacity: 1;
+                background: rgba(255, 255, 255, 0.2);
+            }
+            
+            .panel-minimized {
+                height: 40px !important;
+                overflow: hidden;
+            }
+            
+            .panel-minimized .panel-content {
+                display: none;
+            }
+            
+            .panel-minimized .panel-minimize {
+                right: auto;
+                left: 8px;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    setupAutoHide() {
+        const autoHideCheckbox = document.getElementById('autoHideUI');
+        if (!autoHideCheckbox) {
+            // Create auto-hide toggle if it doesn't exist
+            const settingsPanel = document.querySelector('.settings-panel, #settingsPanel, .ui-panel');
+            if (settingsPanel) {
+                const autoHideContainer = document.createElement('div');
+                autoHideContainer.className = 'setting-row';
+                autoHideContainer.innerHTML = `
+                    <label>
+                        <input type="checkbox" id="autoHideUI" ${this.settings.autoHideUI ? 'checked' : ''}>
+                        Auto-hide UI
+                    </label>
+                `;
+                settingsPanel.appendChild(autoHideContainer);
+            }
+        }
+        
+        const autoHideToggle = document.getElementById('autoHideUI');
+        if (autoHideToggle) {
+            autoHideToggle.addEventListener('change', (e) => {
+                this.settings.autoHideUI = e.target.checked;
+                this.updateAutoHide();
+                this.saveUIState();
+            });
+        }
+        
+        this.updateAutoHide();
+    }
+    
+    setupUIHoverDetection() {
+        // Detect when mouse is over UI elements
+        const uiPanels = document.querySelectorAll('.ui-panel, .control-panel, .settings-panel');
+        
+        uiPanels.forEach(panel => {
+            panel.addEventListener('mouseenter', () => {
+                this.isMouseOverUI = true;
+                document.body.classList.add('ui-hover');
+                this.clearAutoHideTimeout();
+            });
+            
+            panel.addEventListener('mouseleave', () => {
+                this.isMouseOverUI = false;
+                document.body.classList.remove('ui-hover');
+                if (this.settings.autoHideUI) {
+                    this.startAutoHideTimeout();
                 }
             });
-
-            if (sourceNode) {
-                sourceNode.disconnect();
-            }
-
-            micSource = audioContext.createMediaStreamSource(micStream);
-            micSource.connect(analyser);
-            analyser.disconnect(audioContext.destination);
-
-            console.log('Microphone is active');
-
-        } catch (error) {
-            console.error("Microphone access failed:", error.name, error.message);
-            usingMic = false;
-            inputToggle.textContent = 'Use Mic';
+        });
+        
+        // Also handle the main canvas
+        if (this.renderer && this.renderer.domElement) {
+            this.renderer.domElement.addEventListener('mousemove', () => {
+                if (!this.isMouseOverUI && this.settings.autoHideUI) {
+                    this.showUITemporarily();
+                }
+            });
         }
     }
-}
-
-async function initAudio() {
-    try {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 2048;
+    
+    updateAutoHide() {
+        if (this.settings.autoHideUI) {
+            document.body.classList.add('auto-hide');
+            this.startAutoHideTimeout();
+        } else {
+            document.body.classList.remove('auto-hide');
+            this.clearAutoHideTimeout();
         }
-
-        if (!usingMic) {
-            if (!audioElement) {
-                audioElement = document.createElement('audio');
-                audioElement.crossOrigin = "anonymous";
-                audioElement.volume = volumeControl.value;
-            }
-
-            try {
-                if (!sourceNode) {
-                    sourceNode = audioContext.createMediaElementSource(audioElement);
-                    sourceNode.connect(analyser);
-                    analyser.connect(audioContext.destination);
-                } else {
-                    sourceNode.disconnect();
-                    sourceNode.connect(analyser);
-                }
-
-            } catch (error) {
-                console.error("Failed to connect audio element to analyser:", error.name, error.message);
-            }
-
-            try {
-                const response = await fetch('Songs/');
-                const text = await response.text();
+    }
+    
+    startAutoHideTimeout() {
+        this.clearAutoHideTimeout();
+        if (this.settings.autoHideUI && !this.isMouseOverUI) {
+            this.autoHideTimeout = setTimeout(() => {
+                document.body.classList.add('ui-auto-hidden');
+            }, this.settings.autoHideDelay);
+        }
+    }
+    
+    clearAutoHideTimeout() {
+        if (this.autoHideTimeout) {
+            clearTimeout(this.autoHideTimeout);
+            this.autoHideTimeout = null;
+        }
+        document.body.classList.remove('ui-auto-hidden');
+    }
+    
+    showUITemporarily() {
+        this.clearAutoHideTimeout();
+        if (this.settings.autoHideUI) {
+            this.startAutoHideTimeout();
+        }
+    }
+    
+    toggleUI() {
+        this.uiCollapsed = !this.uiCollapsed;
+        
+        if (this.uiCollapsed) {
+            document.body.classList.add('ui-collapsed');
+        } else {
+            document.body.classList.remove('ui-collapsed');
+        }
+        
+        this.saveUIState();
+        
+        // Clear auto-hide when manually toggling
+        this.clearAutoHideTimeout();
+        
+        console.log('UI toggled:', this.uiCollapsed ? 'collapsed' : 'expanded');
+    }
+    
+    addPanelMinimizeButtons() {
+        // Add minimize buttons to individual panels
+        const panels = document.querySelectorAll('.ui-panel, .control-panel, .settings-panel');
+        
+        panels.forEach(panel => {
+            if (!panel.querySelector('.panel-minimize')) {
+                const minimizeBtn = document.createElement('button');
+                minimizeBtn.className = 'panel-minimize';
+                minimizeBtn.textContent = '−';
+                minimizeBtn.title = 'Minimize panel';
                 
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(text, 'text/html');
-                
-                const files = Array.from(doc.querySelectorAll('a'))
-                    .map(a => decodeURIComponent(a.href))
-                    .filter(href => href.match(/\.(mp3|wav|ogg)$/i))
-                    .map(href => {
-                        const fileName = href.split('/').pop();
-                        return {
-                            path: `Songs/${fileName}`,
-                            name: fileName.replace(/\.(mp3|wav|ogg)$/i, '')
-                        };
-                    });
-                
-                songSelect.innerHTML = '';
-                
-                files.forEach(file => {
-                    const option = document.createElement('option');
-                    option.value = file.path;
-                    option.textContent = file.name;
-                    songSelect.appendChild(option);
+                minimizeBtn.addEventListener('click', () => {
+                    panel.classList.toggle('panel-minimized');
+                    minimizeBtn.textContent = panel.classList.contains('panel-minimized') ? '+' : '−';
+                    minimizeBtn.title = panel.classList.contains('panel-minimized') ? 'Expand panel' : 'Minimize panel';
                 });
                 
-                if (files.length > 0 && !audioElement.src) {
-                    audioElement.src = files[0].path;
+                panel.style.position = 'relative';
+                panel.appendChild(minimizeBtn);
+            }
+        });
+    }
+    
+    saveUIState() {
+        const uiState = {
+            collapsed: this.uiCollapsed,
+            autoHide: this.settings.autoHideUI,
+            autoHideDelay: this.settings.autoHideDelay
+        };
+        localStorage.setItem('narratorOrbUIState', JSON.stringify(uiState));
+    }
+    
+    loadUIState() {
+        const saved = localStorage.getItem('narratorOrbUIState');
+        if (saved) {
+            try {
+                const uiState = JSON.parse(saved);
+                this.uiCollapsed = uiState.collapsed || false;
+                this.settings.autoHideUI = uiState.autoHide !== undefined ? uiState.autoHide : true;
+                this.settings.autoHideDelay = uiState.autoHideDelay || 3000;
+                
+                if (this.uiCollapsed) {
+                    document.body.classList.add('ui-collapsed');
                 }
                 
+                // Update auto-hide checkbox if it exists
+                const autoHideCheckbox = document.getElementById('autoHideUI');
+                if (autoHideCheckbox) {
+                    autoHideCheckbox.checked = this.settings.autoHideUI;
+                }
+                
+                this.updateAutoHide();
             } catch (error) {
-                console.error("Failed to load song list:", error);
+                console.error('Failed to load UI state:', error);
+            }
+        }
+    }
+    
+    setupScene() {
+        this.scene = new THREE.Scene();
+        
+        // Create starfield background
+        this.createStarfield();
+        
+        // Move camera much closer for dramatic effect like the example
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(0, 0, 2.5); // Much closer - was 5, now 2.5
+        
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(this.renderer.domElement);
+        
+        // Add ambient lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        this.scene.add(ambientLight);
+        
+        console.log("Scene setup complete");
+    }
+    
+    createStarfield() {
+        const starGeometry = new THREE.BufferGeometry();
+        const starPositions = [];
+        const starSizes = [];
+        
+        // Create more scattered stars further back for depth
+        for (let i = 0; i < 800; i++) {
+            const x = (Math.random() - 0.5) * 200; // Spread stars further
+            const y = (Math.random() - 0.5) * 200;
+            const z = (Math.random() - 0.5) * 200 - 50; // Push stars further back
+            
+            starPositions.push(x, y, z);
+            starSizes.push(Math.random() * 2 + 0.5);
+        }
+        
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+        starGeometry.setAttribute('size', new THREE.Float32BufferAttribute(starSizes, 1));
+        
+        const starMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 }
+            },
+            vertexShader: `
+                attribute float size;
+                varying float vSize;
+                uniform float time;
+                
+                void main() {
+                    vSize = size;
+                    vec3 pos = position;
+                    
+                    pos.x += sin(time + position.y) * 0.01;
+                    pos.y += cos(time + position.x) * 0.01;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    gl_PointSize = size * (1.0 + sin(time * 2.0 + position.x) * 0.2);
+                }
+            `,
+            fragmentShader: `
+                varying float vSize;
+                uniform float time;
+                
+                void main() {
+                    vec2 center = gl_PointCoord - vec2(0.5);
+                    float dist = length(center);
+                    
+                    if (dist > 0.5) discard;
+                    
+                    float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+                    alpha *= (0.8 + 0.2 * sin(time * 3.0 + vSize));
+                    
+                    gl_FragColor = vec4(1.0, 1.0, 1.0, alpha * 0.6); // Dimmer stars
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending
+        });
+        
+        this.starfield = new THREE.Points(starGeometry, starMaterial);
+        this.scene.add(this.starfield);
+        
+        this.scene.background = new THREE.Color(0x0a0a0a); // Slightly darker background
+    }
+    
+    setupAudio() {
+        console.log("Audio setup ready");
+    }
+    
+    async initializeAudio() {
+        if (!this.audioContext) {
+            try {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 512;
+                this.analyser.smoothingTimeConstant = 0.75;
+                
+                this.gainNode = this.audioContext.createGain();
+                this.gainNode.gain.value = this.settings.gain;
+                this.gainNode.connect(this.audioContext.destination);
+                this.analyser.connect(this.gainNode);
+                
+                console.log("Audio context initialized");
+                return true;
+            } catch (error) {
+                console.error("Failed to initialize audio context:", error);
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    initializeNarratorOrb() {
+        if (this.narratorOrb) {
+            this.narratorOrb.destroy();
+        }
+        
+        if (this.reflectionGroup) {
+            this.scene.remove(this.reflectionGroup);
+        }
+        
+        // Larger orb configuration for closer viewing
+        const orbConfig = {
+            coreParticleCount: Math.floor(this.settings.particles * 0.6),
+            tendrilParticleCount: Math.floor(this.settings.particles * 0.4),
+            coreRadius: 1.8, // Larger core - was 1.0
+            tendrilRadius: 3.5, // Keep tendrils proportional
+            baseHue: 200
+        };
+        
+        this.narratorOrb = new NarratorOrb(
+            this.scene,
+            this.camera,
+            this.renderer,
+            this.analyser,
+            orbConfig
+        );
+        
+        // Center the orb perfectly in view like the example
+        if (this.narratorOrb.orbGroup) {
+            this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
+            this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
+        }
+        
+        this.createOrbReflection();
+        
+        console.log("NarratorOrb initialized with analyser:", !!this.analyser);
+    }
+    
+    createOrbReflection() {
+        this.reflectionGroup = new THREE.Group();
+        
+        if (this.narratorOrb.nebulaCore) {
+            const reflectionCoreGeometry = this.narratorOrb.nebulaCore.geometry.clone();
+            const reflectionCoreMaterial = this.narratorOrb.nebulaMaterial.clone();
+            
+            reflectionCoreMaterial.uniforms.intensity.value = 0.2; // Dimmer reflection
+            
+            this.reflectionCore = new THREE.Points(reflectionCoreGeometry, reflectionCoreMaterial);
+            this.reflectionGroup.add(this.reflectionCore);
+        }
+        
+        if (this.narratorOrb.nebulaTendrils) {
+            const reflectionTendrilGeometry = this.narratorOrb.nebulaTendrils.geometry.clone();
+            const reflectionTendrilMaterial = this.narratorOrb.tendrilMaterial.clone();
+            
+            reflectionTendrilMaterial.uniforms.intensity.value = 0.15; // Dimmer reflection
+            
+            this.reflectionTendrils = new THREE.Points(reflectionTendrilGeometry, reflectionTendrilMaterial);
+            this.reflectionGroup.add(this.reflectionTendrils);
+        }
+        
+        // Position reflection further down and make it smaller
+        this.reflectionGroup.position.set(0, -4, 0); // Further down
+        this.reflectionGroup.scale.y = -1; // Flip vertically
+        this.reflectionGroup.scale.setScalar(0.4); // Smaller reflection
+        
+        this.scene.add(this.reflectionGroup);
+    }
+    
+    setupControls() {
+        this.initializeNarratorOrb();
+        
+        // File upload with drag & drop
+        const fileInput = document.getElementById('audioFile');
+        const fileUpload = document.getElementById('fileUpload');
+        
+        if (fileInput && fileUpload) {
+            // Click to upload
+            fileUpload.addEventListener('click', (e) => {
+                if (e.target !== fileInput) {
+                    console.log("File upload clicked, opening file dialog...");
+                    fileInput.click();
+                }
+            });
+            
+            // File selection
+            fileInput.addEventListener('change', (e) => {
+                console.log("File input changed, files:", e.target.files.length);
+                if (e.target.files.length > 0) {
+                    const file = e.target.files[0];
+                    console.log("Selected file:", file.name, "Type:", file.type, "Size:", file.size);
+                    this.loadAudioFile(file);
+                }
+            });
+            
+            // Drag & drop functionality
+            fileUpload.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                fileUpload.classList.add('dragover');
+            });
+            
+            fileUpload.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                fileUpload.classList.remove('dragover');
+            });
+            
+            fileUpload.addEventListener('drop', (e) => {
+                e.preventDefault();
+                fileUpload.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                console.log("Files dropped:", files.length);
+                if (files.length > 0) {
+                    const file = files[0];
+                    console.log("Dropped file:", file.name, "Type:", file.type);
+                    if (file.type.startsWith('audio/') || file.name.toLowerCase().endsWith('.mp3') || 
+                        file.name.toLowerCase().endsWith('.wav') || file.name.toLowerCase().endsWith('.ogg')) {
+                        this.loadAudioFile(file);
+                    } else {
+                        this.showUploadStatus('✗ Please select an audio file (MP3, WAV, OGG)', true);
+                    }
+                }
+            });
+        }
+        
+        // Demo audio button - disable it since user wants file upload
+        const loadDefaultBtn = document.getElementById('loadDefaultBtn');
+        if (loadDefaultBtn) {
+            loadDefaultBtn.addEventListener('click', () => {
+                this.showUploadStatus('Please upload your own audio file instead', true);
+            });
+        }
+        
+        // Playback controls
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        if (playBtn) {
+            playBtn.addEventListener('click', () => {
+                console.log("Play button clicked, audio loaded:", this.audioLoaded);
+                this.play();
+            });
+        }
+        if (pauseBtn) {
+            pauseBtn.addEventListener('click', () => {
+                console.log("Pause button clicked");
+                this.pause();
+            });
+        }
+        if (stopBtn) {
+            stopBtn.addEventListener('click', () => {
+                console.log("Stop button clicked");
+                this.stop();
+            });
+        }
+        
+        // Progress bar
+        const progressBar = document.getElementById('progressBar');
+        if (progressBar) {
+            progressBar.addEventListener('click', (e) => {
+                if (this.currentAudio && this.audioLoaded) {
+                    const rect = progressBar.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const percentage = x / rect.width;
+                    this.currentAudio.currentTime = percentage * this.currentAudio.duration;
+                    this.updateProgress();
+                }
+            });
+        }
+        
+        // Volume control
+        this.setupSlider('volumeSlider', 'volumeValue', (value) => {
+            this.settings.volume = parseFloat(value);
+            if (this.currentAudio) {
+                this.currentAudio.volume = this.settings.volume;
+            }
+            const volumeValue = document.getElementById('volumeValue');
+            if (volumeValue) volumeValue.textContent = Math.round(this.settings.volume * 100) + '%';
+        });
+        
+        // Settings sliders
+        this.setupSlider('gainSlider', 'gainValue', (value) => {
+            this.settings.gain = parseFloat(value);
+            if (this.gainNode) {
+                this.gainNode.gain.value = this.settings.gain;
+            }
+            const gainValue = document.getElementById('gainValue');
+            if (gainValue) gainValue.textContent = this.settings.gain.toFixed(1) + 'x';
+        });
+        
+        this.setupSlider('particleSlider', 'particleValue', (value) => {
+            this.settings.particles = parseInt(value);
+            const particleValue = document.getElementById('particleValue');
+            if (particleValue) particleValue.textContent = this.settings.particles.toLocaleString();
+        });
+        
+        this.setupSlider('intensitySlider', 'intensityValue', (value) => {
+            this.settings.intensity = parseFloat(value);
+            const intensityValue = document.getElementById('intensityValue');
+            if (intensityValue) intensityValue.textContent = this.settings.intensity.toFixed(1) + 'x';
+            
+            if (this.narratorOrb) {
+                this.narratorOrb.setIntensity(this.settings.intensity);
+            }
+        });
+        
+        this.setupPresetControls();
+        
+        // Add minimize buttons to panels
+        this.addPanelMinimizeButtons();
+        
+        this.animate();
+        console.log("Controls setup complete");
+    }
+    
+    setupSlider(sliderId, valueId, callback) {
+        const slider = document.getElementById(sliderId);
+        if (slider) {
+            slider.addEventListener('input', (e) => {
+                callback(e.target.value);
+            });
+            callback(slider.value);
+        }
+    }
+    
+    showUploadStatus(message, isError = false) {
+        const uploadStatus = document.getElementById('uploadStatus');
+        if (uploadStatus) {
+            uploadStatus.textContent = message;
+            uploadStatus.className = 'upload-status ' + (isError ? 'error' : 'success');
+            uploadStatus.style.display = 'block';
+            
+            if (!isError) {
+                setTimeout(() => {
+                    uploadStatus.style.display = 'none';
+                }, 5000);
+            }
+        }
+        console.log("Upload status:", message, "Error:", isError);
+    }
+    
+    async loadAudioFile(file) {
+        try {
+            console.log("Starting to load audio file:", file.name, "Size:", file.size, "Type:", file.type);
+            
+            // Show loading state
+            const fileUpload = document.getElementById('fileUpload');
+            if (fileUpload) fileUpload.classList.add('loading');
+            
+            this.showLoading(true);
+            this.showUploadStatus("Loading audio file...");
+            
+            // Validate file
+            const isAudioFile = file.type.startsWith('audio/') || 
+                               file.name.toLowerCase().endsWith('.mp3') || 
+                               file.name.toLowerCase().endsWith('.wav') || 
+                               file.name.toLowerCase().endsWith('.ogg') ||
+                               file.name.toLowerCase().endsWith('.m4a') ||
+                               file.name.toLowerCase().endsWith('.aac');
+            
+            if (!isAudioFile) {
+                throw new Error('Please select an audio file (MP3, WAV, OGG, M4A, AAC)');
             }
             
-            volumeControl.oninput = e => {
-                if (audioElement) {
-                    audioElement.volume = e.target.value;
-                }
-            };
+            // Initialize audio context
+            const audioInitialized = await this.initializeAudio();
+            if (!audioInitialized) {
+                throw new Error('Failed to initialize audio system');
+            }
             
-            setupTimelineControl();
-        }
-
-        console.log('Audio initialized');
-        
-    } catch (error) {
-        console.error("Audio initialization failed:", error);
-    }
-}
-
-function getAudioData(sphere) {
-    if (!analyser || (!audioContext && !usingMic)) return { 
-        average: 0, 
-        frequencies: new Float32Array(), 
-        peakDetected: false,
-        rangeEnergy: 0
-    };
-    
-    try {
-        const frequencies = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(frequencies);
-        
-        const gainMultiplier = sphere.params.gainMultiplier; 
-        frequencies.forEach((value, index) => {
-            frequencies[index] = Math.min(value * gainMultiplier, 255);
-        });
-
-        const frequencyToIndex = (frequency) => Math.round(frequency / (audioContext.sampleRate / 2) * analyser.frequencyBinCount);
-
-        const minFreqIndex = frequencyToIndex(sphere.params.minFrequency);
-        const maxFreqIndex = frequencyToIndex(sphere.params.maxFrequency);
-        const frequencyRange = frequencies.slice(minFreqIndex, maxFreqIndex + 1);
-        const rangeEnergy = frequencyRange.reduce((a, b) => a + b, 0) / frequencyRange.length;
-
-        const minFreqBeatIndex = frequencyToIndex(sphere.params.minFrequencyBeat); // Nové pásmo pro beaty
-        const maxFreqBeatIndex = frequencyToIndex(sphere.params.maxFrequencyBeat);
-        const frequencyRangeBeat = frequencies.slice(minFreqBeatIndex, maxFreqBeatIndex + 1);
-        const rangeEnergyBeat = frequencyRangeBeat.reduce((a, b) => a + b, 0) / frequencyRangeBeat.length;
-
-        sphere.peakDetection.energyHistory.push(rangeEnergy);
-        if (sphere.peakDetection.energyHistory.length > sphere.peakDetection.historyLength) {
-            sphere.peakDetection.energyHistory.shift();
-        }
-        
-        const averageEnergy = sphere.peakDetection.energyHistory.reduce((a, b) => a + b, 0) / 
-                            sphere.peakDetection.energyHistory.length;
-        
-        const now = performance.now();
-        const peakDetected = rangeEnergy > averageEnergy * sphere.params.peakSensitivity &&
-                           now - sphere.peakDetection.lastPeakTime > sphere.peakDetection.minTimeBetweenPeaks;
-        
-        if (peakDetected) {
-            sphere.peakDetection.lastPeakTime = now;
-            console.log(`Sphere ${sphere.index + 1} PEAK DETECTED! Energy: ${rangeEnergy}, Average: ${averageEnergy}`);
-        }
-        
-
-        return {
-            average: rangeEnergy / 255,
-            frequencies,
-            peakDetected,
-            rangeEnergy: rangeEnergy,
-            rangeEnergyBeat: rangeEnergyBeat
-        };
-
-    } catch (error) {
-        console.error("Audio analysis failed:", error);
-        return { 
-            average: 0, 
-            frequencies: new Float32Array(), 
-            peakDetected: false,
-            rangeEnergy: 0
-        };
-    }
-}
-
-
-function updateTimeline() {
-    if (audioElement && !audioElement.paused && audioElement.duration) {
-        const percent = (audioElement.currentTime / audioElement.duration) * 100;
-        timelineControl.value = percent;
-    }
-}
-
-function setupTimelineControl() {
-    audioElement.addEventListener('loadedmetadata', () => {
-        timelineControl.value = 0;
-        console.log('Song duration:', audioElement.duration);
-    });
-
-    audioElement.addEventListener('timeupdate', updateTimeline);
-
-    timelineControl.addEventListener('input', (e) => {
-        if (audioElement.duration) {
-            const time = (e.target.value / 100) * audioElement.duration;
-            audioElement.currentTime = time;
-        }
-    });
-}
-
-function togglePlay() {
-    if (usingMic) return; 
-
-    if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
-    
-    if (!sourceNode && audioElement) {
-        try {
-            sourceNode = audioContext.createMediaElementSource(audioElement);
-            sourceNode.connect(analyser);
-            analyser.connect(audioContext.destination);
+            // Resume audio context if suspended
+            if (this.audioContext.state === 'suspended') {
+                console.log("Resuming suspended audio context...");
+                await this.audioContext.resume();
+            }
+            
+            // Clean up previous audio
+            if (this.currentAudio) {
+                console.log("Cleaning up previous audio...");
+                this.currentAudio.pause();
+                if (this.currentAudio.src && this.currentAudio.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(this.currentAudio.src);
+                }
+            }
+            
+            if (this.audioSource) {
+                console.log("Disconnecting previous audio source...");
+                this.audioSource.disconnect();
+                this.audioSource = null;
+            }
+            
+            // Create new audio element
+            console.log("Creating new audio element...");
+            this.currentAudio = new Audio();
+            this.currentAudio.preload = 'auto';
+            this.currentAudio.volume = this.settings.volume;
+            
+            // Create object URL for the file
+            const audioURL = URL.createObjectURL(file);
+            this.currentAudio.src = audioURL;
+            
+            console.log("Audio URL created:", audioURL);
+            
+            // Wait for audio to load
+            await new Promise((resolve, reject) => {
+                let timeoutId;
+                
+                const cleanup = () => {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    this.currentAudio.removeEventListener('loadedmetadata', onLoaded);
+                    this.currentAudio.removeEventListener('canplaythrough', onLoaded);
+                    this.currentAudio.removeEventListener('error', onError);
+                };
+                
+                const onLoaded = () => {
+                    console.log("Audio metadata loaded successfully");
+                    console.log("Duration:", this.currentAudio.duration);
+                    console.log("Ready state:", this.currentAudio.readyState);
+                    cleanup();
+                    resolve();
+                };
+                
+                const onError = (e) => {
+                    console.error("Audio loading error:", e);
+                    console.error("Audio error code:", this.currentAudio.error?.code);
+                    console.error("Audio error message:", this.currentAudio.error?.message);
+                    cleanup();
+                    reject(new Error(`Failed to load audio: ${this.currentAudio.error?.message || 'Unknown error'}`));
+                };
+                
+                this.currentAudio.addEventListener('loadedmetadata', onLoaded);
+                this.currentAudio.addEventListener('canplaythrough', onLoaded);
+                this.currentAudio.addEventListener('error', onError);
+                
+                // Set timeout
+                timeoutId = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Audio loading timeout - file may be corrupted or unsupported'));
+                }, 30000); // 30 second timeout
+                
+                // Force load
+                this.currentAudio.load();
+            });
+            
+            // Create audio source and connect to analyser
+            console.log("Creating audio source node...");
+            this.audioSource = this.audioContext.createMediaElementSource(this.currentAudio);
+            
+            console.log("Connecting audio to analyser...");
+            this.audioSource.connect(this.analyser);
+            
+            // Update narrator orb with new analyser
+            if (this.narratorOrb) {
+                console.log("Updating narrator orb with new analyser...");
+                this.narratorOrb.analyserNode = this.analyser;
+                this.narratorOrb.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                console.log("Analyser frequency bin count:", this.analyser.frequencyBinCount);
+            }
+            
+            // Setup audio event listeners
+            this.currentAudio.addEventListener('timeupdate', () => {
+                this.updateProgress();
+            });
+            
+            this.currentAudio.addEventListener('ended', () => {
+                console.log("Audio ended");
+                this.stop();
+            });
+            
+            this.currentAudio.addEventListener('error', (e) => {
+                console.error('Audio playback error:', e);
+                this.showUploadStatus('Audio playback error occurred', true);
+            });
+            
+            this.currentAudio.addEventListener('play', () => {
+                console.log("Audio started playing");
+            });
+            
+            this.currentAudio.addEventListener('pause', () => {
+                console.log("Audio paused");
+            });
+            
+            // Mark as loaded and update UI
+            this.audioLoaded = true;
+            this.updateAudioInfo(file.name);
+            this.enablePlaybackControls();
+            this.showLoading(false);
+            
+            // Remove loading state
+            if (fileUpload) fileUpload.classList.remove('loading');
+            
+            this.showUploadStatus(`✓ ${file.name} loaded successfully! Press play to start.`);
+            console.log('Audio file loaded successfully:', file.name);
+            
         } catch (error) {
-            console.error("Audio connection failed:", error);
+            console.error('Failed to load audio file:', error);
+            this.showLoading(false);
+            this.audioLoaded = false;
+            
+            // Remove loading state
+            const fileUpload = document.getElementById('fileUpload');
+            if (fileUpload) fileUpload.classList.remove('loading');
+            
+            this.showUploadStatus('✗ ' + error.message, true);
+        }
+    }
+    
+    async play() {
+        try {
+            if (!this.currentAudio) {
+                this.showUploadStatus('✗ Please upload an audio file first', true);
+                return;
+            }
+            
+            if (!this.audioLoaded) {
+                this.showUploadStatus('✗ Audio is still loading, please wait', true);
+                return;
+            }
+            
+            console.log("Attempting to play audio...");
+            
+            if (this.audioContext && this.audioContext.state === 'suspended') {
+                console.log("Resuming audio context...");
+                await this.audioContext.resume();
+            }
+            
+            await this.currentAudio.play();
+            this.isPlaying = true;
+            this.updatePlaybackButtons();
+            console.log('Audio playing successfully');
+            
+        } catch (error) {
+            console.error('Play failed:', error);
+            this.showUploadStatus('✗ Playback failed: ' + error.message, true);
+        }
+    }
+    
+    pause() {
+        if (this.currentAudio && this.audioLoaded) {
+            this.currentAudio.pause();
+            this.isPlaying = false;
+            this.updatePlaybackButtons();
+            console.log('Audio paused');
+        }
+    }
+    
+    stop() {
+        if (this.currentAudio && this.audioLoaded) {
+            this.currentAudio.pause();
+            this.currentAudio.currentTime = 0;
+            this.isPlaying = false;
+            this.updatePlaybackButtons();
+            this.updateProgress();
+            console.log('Audio stopped');
+        }
+    }
+    
+    updatePlaybackButtons() {
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        
+        if (playBtn) playBtn.disabled = this.isPlaying || !this.audioLoaded;
+        if (pauseBtn) pauseBtn.disabled = !this.isPlaying || !this.audioLoaded;
+    }
+    
+    enablePlaybackControls() {
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        if (playBtn) playBtn.disabled = false;
+        if (pauseBtn) pauseBtn.disabled = true; // Initially disabled until playing
+        if (stopBtn) stopBtn.disabled = false;
+        
+        console.log("Playback controls enabled");
+    }
+    
+    updateAudioInfo(filename) {
+        const audioTitle = document.getElementById('audioTitle');
+        const audioInfo = document.getElementById('audioInfo');
+        
+        if (audioTitle) audioTitle.textContent = filename;
+        if (audioInfo) audioInfo.style.display = 'block';
+        
+        console.log("Audio info updated:", filename);
+    }
+    
+    updateProgress() {
+        if (this.currentAudio && this.audioLoaded) {
+            const progress = (this.currentAudio.currentTime / this.currentAudio.duration) * 100;
+            const progressFill = document.getElementById('progressFill');
+            if (progressFill) progressFill.style.width = progress + '%';
+            
+            const currentTime = this.formatTime(this.currentAudio.currentTime);
+            const duration = this.formatTime(this.currentAudio.duration);
+            const audioTime = document.getElementById('audioTime');
+            if (audioTime) audioTime.textContent = `${currentTime} / ${duration}`;
+        }
+    }
+    
+    formatTime(seconds) {
+        if (isNaN(seconds)) return '00:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    showLoading(show) {
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = show ? 'flex' : 'none';
+    }
+    
+    setupPresetControls() {
+        const savePresetBtn = document.getElementById('savePresetBtn');
+        const loadPresetBtn = document.getElementById('loadPresetBtn');
+        const deletePresetBtn = document.getElementById('deletePresetBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const importBtn = document.getElementById('importBtn');
+        const importFile = document.getElementById('importFile');
+        
+        if (savePresetBtn) {
+            savePresetBtn.addEventListener('click', () => this.savePreset());
+        }
+        if (loadPresetBtn) {
+            loadPresetBtn.addEventListener('click', () => this.loadPreset());
+        }
+        if (deletePresetBtn) {
+            deletePresetBtn.addEventListener('click', () => this.deletePreset());
+        }
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetSettings());
+        }
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportSettings());
+        }
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                if (importFile) importFile.click();
+            });
+        }
+        if (importFile) {
+            importFile.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this.importSettings(e.target.files[0]);
+                }
+            });
+        }
+    }
+    
+    setupEventListeners() {
+        window.addEventListener('resize', () => {
+            this.handleResize();
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ignore if typing in input fields
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            switch (e.code) {
+                case 'Space':
+                    e.preventDefault();
+                    if (this.isPlaying) {
+                        this.pause();
+                    } else {
+                        this.play();
+                    }
+                    break;
+                    
+                case 'KeyT':
+                    e.preventDefault();
+                    this.toggleUI();
+                    break;
+                    
+                case 'KeyH':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        this.settings.autoHideUI = !this.settings.autoHideUI;
+                        const autoHideCheckbox = document.getElementById('autoHideUI');
+                        if (autoHideCheckbox) autoHideCheckbox.checked = this.settings.autoHideUI;
+                        this.updateAutoHide();
+                        this.saveUIState();
+                    }
+                    break;
+            }
+        });
+        
+        // Mouse movement for auto-hide
+        document.addEventListener('mousemove', () => {
+            if (this.settings.autoHideUI && !this.isMouseOverUI) {
+                this.showUITemporarily();
+            }
+        });
+    }
+    
+    savePreset() {
+        const presetName = document.getElementById('presetName');
+        if (!presetName || !presetName.value.trim()) {
+            alert('Please enter a preset name');
             return;
         }
-    }
-    
-    if (audioElement.paused) {
-        audioElement.play()
-            .then(() => playPause.textContent = 'Pause')
-            .catch(error => console.error("Playback failed:", error));
-    } else {
-        audioElement.pause();
-        playPause.textContent = 'Play';
-    }
-}
-
-function changeSong() {
-    if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
-    
-    audioElement.src = songSelect.value;
-    audioElement.load();
-    
-    if (!sourceNode) {
-        try {
-            sourceNode = audioContext.createMediaElementSource(audioElement);
-            sourceNode.connect(analyser);
-            analyser.connect(audioContext.destination);
-        } catch (error) {
-            console.error("Audio connection failed:", error);
-            return;
-        }
-    }
-    
-    audioElement.play()
-        .then(() => {
-            playPause.textContent = 'Pause';
-            console.log("Playback started");
-        })
-        .catch(error => console.error("Playback failed:", error));
-
-    timelineControl.value = 0;
-}
-
-function generateNewNoiseScale(params, lastNoiseScale) {
-    if (!params.dynamicNoiseScale) {
-        return params.noiseScale;
-    }
-
-    let { minNoiseScale, maxNoiseScale, noiseStep } = params;
-
-    // --- PŘIDANÁ POJISTKA A DROBNÉ LOGY ---
-    if (minNoiseScale >= maxNoiseScale) {
-        console.warn(`Fixing minNoiseScale (${minNoiseScale}) >= maxNoiseScale (${maxNoiseScale}).`);
-        maxNoiseScale = minNoiseScale + 0.1; // Natvrdo posunout, aby byl rozdíl aspoň 0.1
-    }
-
-    let range = maxNoiseScale - minNoiseScale;
-    if (range < 0.1) {
-        console.warn(`Range < 0.1 => Forcing minimal range = 0.1`);
-        range = 0.1;
-        maxNoiseScale = minNoiseScale + range;
-    }
-
-    if (noiseStep > range) {
-        console.warn(`noiseStep (${noiseStep}) > range (${range}) => Forcing noiseStep = range / 2`);
-        noiseStep = range / 2;
-    }
-
-    // LastNoiseScale valid range
-    lastNoiseScale = Math.max(minNoiseScale, Math.min(lastNoiseScale, maxNoiseScale));
-
-    const stepsUp = Math.floor((maxNoiseScale - lastNoiseScale) / noiseStep);
-    const stepsDown = Math.floor((lastNoiseScale - minNoiseScale) / noiseStep);
-
-    if (stepsUp === 0 && stepsDown === 0) {
-        return lastNoiseScale;
-    }
-
-    const direction = Math.random() < 0.5 && stepsDown > 0 ? -1 : 1;
-    const steps = direction === 1 
-        ? Math.floor(Math.random() * (stepsUp + 1))
-        : Math.floor(Math.random() * (stepsDown + 1));
-
-    let newValue = lastNoiseScale + direction * steps * noiseStep;
-
-    newValue = Math.max(minNoiseScale, Math.min(newValue, maxNoiseScale));
-
-    return newValue;
-}
-
-// Reinit particles
-function reinitializeParticlesForSphere(sphere, sphereParams, sphereGeometry) {
-    console.log(`Reinitializing sphere ${sphere.index + 1} with ${sphereParams.particleCount} particles`);
-
-    const newPositions = new Float32Array(sphereParams.particleCount * 3);
-    const newColors = new Float32Array(sphereParams.particleCount * 3);
-    const newVelocities = new Float32Array(sphereParams.particleCount * 3);
-    const newBasePositions = new Float32Array(sphereParams.particleCount * 3);
-    const newLifetimes = new Float32Array(sphereParams.particleCount);
-    const newMaxLifetimes = new Float32Array(sphereParams.particleCount);
-    const newBeatEffects = new Float32Array(sphereParams.particleCount);
-
-    for (let i = 0; i < sphereParams.particleCount; i++) {
-        const i3 = i * 3;
-        const radius = THREE.MathUtils.lerp(0, sphereParams.sphereRadius, sphereParams.innerSphereRadius);
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const r = Math.cbrt(Math.random()) * radius;
-
-        const x = r * Math.sin(phi) * Math.cos(theta);
-        const y = r * Math.sin(phi) * Math.sin(theta);
-        const z = r * Math.cos(phi);
-
-        newPositions[i3] = x;
-        newPositions[i3 + 1] = y;
-        newPositions[i3 + 2] = z;
-
-        newBasePositions[i3] = x;
-        newBasePositions[i3 + 1] = y;
-        newBasePositions[i3 + 2] = z;
-
-        newVelocities[i3] = 0;
-        newVelocities[i3 + 1] = 0;
-        newVelocities[i3 + 2] = 0;
-
-        const lt = Math.random() * sphereParams.particleLifetime;
-        newLifetimes[i] = lt;
-        newMaxLifetimes[i] = lt;
-
-        newBeatEffects[i] = 0;
-    }
-
-    sphereGeometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
-    sphereGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
-
-    updateColorsForSphere(sphereParams, sphereGeometry, newColors);
-
-    return {
-        newPositions,
-        newColors,
-        newVelocities,
-        newBasePositions,
-        newLifetimes,
-        newMaxLifetimes,
-        newBeatEffects
-    };
-}
-
-function updateColorsForSphere(sphereParams, sphereGeometry, sphereColors) {
-    const color1 = new THREE.Color(sphereParams.colorStart);
-    const color2 = new THREE.Color(sphereParams.colorEnd);
-
-    for (let i = 0; i < sphereParams.particleCount; i++) {
-        const t = i / sphereParams.particleCount;
-        sphereColors[i * 3] = color1.r * (1 - t) + color2.r * t;
-        sphereColors[i * 3 + 1] = color1.g * (1 - t) + color2.g * t;
-        sphereColors[i * 3 + 2] = color1.b * (1 - t) + color2.b * t;
-    }
-    sphereGeometry.attributes.color.needsUpdate = true;
-}
-
-// Preset management
-const presets = JSON.parse(localStorage.getItem('presets')) || {}; // Uložené presety
-const defaultParams = []; // Pro ukládání výchozích hodnot každé sféry
-
-// HTML elements presets
-
-let presetContainer = document.querySelector('#presetContainer');
-let presetInput, saveButton, resetButton, presetSelect, deleteButton, exportButton, importButton;
-
-if (!presetContainer) {
-    presetContainer = document.createElement('div');
-    presetContainer.id = 'presetContainer';
-    presetContainer.style.cssText = `
-        position: fixed !important;
-        top: 10px !important; 
-        left: 10px !important;
-        z-index: 1000 !important; 
-        display: flex !important; 
-        gap: 10px !important; 
-    `;
-
-    presetInput = document.createElement('input');
-    presetInput.type = 'text';
-    presetInput.placeholder = 'Preset name';
-    presetInput.style.cssText = 'padding: 5px; border-radius: 3px;';
-
-    saveButton = document.createElement('button');
-    saveButton.textContent = 'Save';
-    saveButton.style.cssText = 'padding: 5px 10px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
-
-    resetButton = document.createElement('button');
-    resetButton.textContent = 'Reset';
-    resetButton.style.cssText = 'padding: 5px 10px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
-
-    presetSelect = document.createElement('select');
-    presetSelect.style.cssText = 'padding: 5px; border-radius: 3px; background: #333; color: white; border: 1px solid #666;';
-
-    deleteButton = document.createElement('button');
-    deleteButton.textContent = 'Delete';
-    deleteButton.style.cssText = 'padding: 5px 10px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
-
-    exportButton = document.createElement('button');
-    exportButton.textContent = 'Export Presets';
-    exportButton.style.cssText = 'padding: 5px 10px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
-
-    importButton = document.createElement('button');
-    importButton.textContent = 'Import Presets';
-    importButton.style.cssText = 'padding: 5px 10px; border-radius: 3px; background: #444; color: white; border: 1px solid #666;';
-
-    presetContainer.appendChild(presetInput);
-    presetContainer.appendChild(saveButton);
-    presetContainer.appendChild(resetButton);
-    presetContainer.appendChild(deleteButton);
-    presetContainer.appendChild(exportButton);
-    presetContainer.appendChild(importButton);
-    presetContainer.appendChild(presetSelect);
-
-    document.body.appendChild(presetContainer);
-}
-
-// Save presets logic
-saveButton.onclick = () => {
-    const presetName = presetInput.value.trim();
-    if (!presetName) return;
-    presets[presetName] = spheres.map(sphere => JSON.parse(JSON.stringify(sphere.params)));
-    localStorage.setItem('presets', JSON.stringify(presets));
-    updatePresetOptions();
-};
-
-// Reset logic
-resetButton.onclick = () => {
-    spheres.forEach((sphere, index) => {
-        const previousParticleCount = sphere.params.particleCount; // Uložíme původní počet částic
         
-        Object.assign(sphere.params, defaultParams[index]);
-        sphere.particleSystem.visible = sphere.params.enabled;
-
-        if (sphere.params.particleCount !== previousParticleCount) {
-            const {
-                newPositions,
-                newColors,
-                newVelocities,
-                newBasePositions,
-                newLifetimes,
-                newMaxLifetimes,
-                newBeatEffects
-            } = reinitializeParticlesForSphere(sphere, sphere.params, sphere.geometry);
-
-            sphere.positions = newPositions;
-            sphere.colors = newColors;
-            sphere.velocities = newVelocities;
-            sphere.basePositions = newBasePositions;
-            sphere.lifetimes = newLifetimes;
-            sphere.maxLifetimes = newMaxLifetimes;
-            sphere.beatEffects = newBeatEffects;
-
-            sphere.geometry.attributes.position.needsUpdate = true;
-            sphere.geometry.attributes.color.needsUpdate = true;
-        }
-
-        const sphereFolder = mainGui.__folders[`Sphere ${index + 1}`];
-        if (sphereFolder) {
-            sphereFolder.__controllers.forEach(controller => controller.updateDisplay());
-        }
-    });
-
-    console.log("Parameters reset to default values");
-    mainGui.updateDisplay();
-};
-
-// Delete preset logic
-deleteButton.onclick = () => {
-    const presetName = presetSelect.value;
-    if (!presetName) {
-        console.warn('Žádný preset není vybraný.');
-        return;
+        const presets = JSON.parse(localStorage.getItem('narratorOrbPresets') || '{}');
+        presets[presetName.value.trim()] = { ...this.settings };
+        localStorage.setItem('narratorOrbPresets', JSON.stringify(presets));
+        
+        this.updatePresetSelect();
+        const name = presetName.value.trim();
+        presetName.value = '';
+        alert(`Preset "${name}" saved!`);
     }
-
-    const sure = confirm(`Skutečně smazat preset "${presetName}"?`);
-    if (!sure) return;
-
-    delete presets[presetName];
-    localStorage.setItem('presets', JSON.stringify(presets));
-    updatePresetOptions();
-
-    presetSelect.value = '';
-    presetInput.value = '';
-
-    console.log(`Preset "${presetName}" byl smazán.`);
-};
-
-// Export presets
-exportButton.onclick = () => {
-    const presetData = JSON.stringify(presets, null, 2);
-    const blob = new Blob([presetData], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'particula_presets.json';
-    link.click();
-    URL.revokeObjectURL(url);
-};
-
-// Import presets
-importButton.onclick = () => {
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'application/json';
-    fileInput.onchange = (event) => {
-        const file = event.target.files[0];
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const importedPresets = JSON.parse(e.target.result);
-            Object.assign(presets, importedPresets);
-            localStorage.setItem('presets', JSON.stringify(presets));
-            updatePresetOptions();
-            console.log('Presety byly úspěšně importovány.');
+    
+    loadPreset() {
+        const presetSelect = document.getElementById('presetSelect');
+        if (!presetSelect || !presetSelect.value) return;
+        
+        const presets = JSON.parse(localStorage.getItem('narratorOrbPresets') || '{}');
+        if (presets[presetSelect.value]) {
+            this.settings = { ...presets[presetSelect.value] };
+            this.applySettings();
+        }
+    }
+    
+    deletePreset() {
+        const presetSelect = document.getElementById('presetSelect');
+        if (!presetSelect || !presetSelect.value) return;
+        
+        if (confirm(`Delete preset "${presetSelect.value}"?`)) {
+            const presets = JSON.parse(localStorage.getItem('narratorOrbPresets') || '{}');
+            delete presets[presetSelect.value];
+            localStorage.setItem('narratorOrbPresets', JSON.stringify(presets));
+            this.updatePresetSelect();
+        }
+    }
+    
+    resetSettings() {
+        this.settings = {
+            gain: 1.0,
+            particles: 50000,
+            intensity: 1.0,
+            volume: 0.5,
+            autoHideUI: true,
+            autoHideDelay: 3000
         };
-        reader.readAsText(file);
-    };
-    fileInput.click();
-};
-
-// Upload presets logic
-presetSelect.onchange = () => {
-    const presetName = presetSelect.value;
-    if (!presetName) return;
-    const preset = presets[presetName];
-    if (!preset) return;
-
-    spheres.forEach((sphere, index) => {
-        const previousParticleCount = sphere.params.particleCount; // Původní počet částic
-
-        Object.assign(sphere.params, preset[index]);
-
-        if (!('minFrequencyBeat' in sphere.params)) {
-            sphere.params.minFrequencyBeat = sphere.params.minFrequency;
-        }
-        if (!('maxFrequencyBeat' in sphere.params)) {
-            sphere.params.maxFrequencyBeat = sphere.params.maxFrequency;
-        }
-
-        if (sphere.params.minNoiseScale >= sphere.params.maxNoiseScale) {
-            console.warn(`Preset fix: minNoiseScale (${sphere.params.minNoiseScale}) >= maxNoiseScale (${sphere.params.maxNoiseScale}).`);
-            sphere.params.maxNoiseScale = sphere.params.minNoiseScale + 0.1;
-        }
-
-        if (sphere.params.particleCount !== previousParticleCount) {
-            const {
-                newPositions,
-                newColors,
-                newVelocities,
-                newBasePositions,
-                newLifetimes,
-                newMaxLifetimes,
-                newBeatEffects
-            } = reinitializeParticlesForSphere(sphere, sphere.params, sphere.geometry);
-
-            sphere.positions = newPositions;
-            sphere.colors = newColors;
-            sphere.velocities = newVelocities;
-            sphere.basePositions = newBasePositions;
-            sphere.lifetimes = newLifetimes;
-            sphere.maxLifetimes = newMaxLifetimes;
-            sphere.beatEffects = newBeatEffects;
-
-            sphere.geometry.attributes.position.needsUpdate = true;
-            sphere.geometry.attributes.color.needsUpdate = true;
-        }
-
-        sphere.particleSystem.visible = sphere.params.enabled;
-    });
-
-    mainGui.updateDisplay();
-};
-
-// Roll presets
-function updatePresetOptions() {
-    while (presetSelect.firstChild) {
-        presetSelect.removeChild(presetSelect.firstChild);
+        this.applySettings();
     }
     
-    const defaultOption = document.createElement('option');
-    defaultOption.textContent = 'Select preset';
-    defaultOption.value = '';
-    presetSelect.appendChild(defaultOption);
-
-    Object.keys(presets).forEach(name => {
-        const option = document.createElement('option');
-        option.textContent = name;
-        option.value = name;
-        presetSelect.appendChild(option);
-    });
-}
-
-// Main GUI panel
-const mainGui = new dat.GUI();
-
-// FOG PARAMS
-const fogParams = {
-    enabled: true,
-    color: '#000000',
-    near: 2.7,
-    far: 3.7,
-};
-
-// After fog update
-function updateFog() {
-    if (!fogParams.enabled) {
-        scene.fog = null;
-    } else {
-        const color = new THREE.Color(fogParams.color);
-        scene.fog = new THREE.Fog(color, fogParams.near, fogParams.far);
-
+    applySettings() {
+        const gainSlider = document.getElementById('gainSlider');
+        const particleSlider = document.getElementById('particleSlider');
+        const intensitySlider = document.getElementById('intensitySlider');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const autoHideCheckbox = document.getElementById('autoHideUI');
+        
+        if (gainSlider) gainSlider.value = this.settings.gain;
+        if (particleSlider) particleSlider.value = this.settings.particles;
+        if (intensitySlider) intensitySlider.value = this.settings.intensity;
+        if (volumeSlider) volumeSlider.value = this.settings.volume;
+        if (autoHideCheckbox) autoHideCheckbox.checked = this.settings.autoHideUI;
+        
+        if (gainSlider) gainSlider.dispatchEvent(new Event('input'));
+        if (particleSlider) particleSlider.dispatchEvent(new Event('input'));
+        if (intensitySlider) intensitySlider.dispatchEvent(new Event('input'));
+        if (volumeSlider) volumeSlider.dispatchEvent(new Event('input'));
+        
+        this.updateAutoHide();
+        this.saveUIState();
     }
-    renderer.render(scene, camera); // Překreslení scény
-}
-
-// Fog init
-if (fogParams.enabled) {
-    updateFog();
-}
-
-// Adding to main GUI
-mainGui.add(fogParams, 'enabled').name('Fog Enabled').onChange(updateFog);
-mainGui.addColor(fogParams, 'color').name('Fog Color').onChange(updateFog);
-mainGui.add(fogParams, 'near', 0.1, 5, 0.1).name('Fog Near').onChange(updateFog);
-mainGui.add(fogParams, 'far', 0.1, 5, 0.1).name('Fog Far').onChange(updateFog);
-
-// Main GUI particleCount
-mainGui.add({
-    globalParticleCount: 20000
-}, 'globalParticleCount', 1000, 100000).step(1000).onChange(value => {
-    spheres.forEach((sphere, index) => {
-        sphere.params.particleCount = value;
-        const {
-            newPositions,
-            newColors,
-            newVelocities,
-            newBasePositions,
-            newLifetimes,
-            newMaxLifetimes,
-            newBeatEffects
-        } = reinitializeParticlesForSphere(
-            sphere, sphere.params, sphere.geometry
-        );
-
-        sphere.positions = newPositions;
-        sphere.colors = newColors;
-        sphere.velocities = newVelocities;
-        sphere.basePositions = newBasePositions;
-        sphere.lifetimes = newLifetimes;
-        sphere.maxLifetimes = newMaxLifetimes;
-        sphere.beatEffects = newBeatEffects;
-
-        sphere.geometry.attributes.position.needsUpdate = true;
-        sphere.geometry.attributes.color.needsUpdate = true;
-
-        const sphereFolder = mainGui.__folders[`Sphere ${index + 1}`];
-        if (sphereFolder) {
-            const particleCountController = sphereFolder.__controllers.find(controller => controller.property === 'particleCount');
-            if (particleCountController) {
-                particleCountController.updateDisplay();
-            }
-        }
-    });
-});
-
-const spheres = [];
-
-function createSphereVisualization(index) {
     
-    // Spheres default frequencies
-    const defaultFrequencies = [
-        { minFrequency: 20, maxFrequency: 80 },  // Sub-bass
-        { minFrequency: 120, maxFrequency: 250 }, // Bass
-        { minFrequency: 250, maxFrequency: 800 }, // Mid
-        { minFrequency: 1000, maxFrequency: 4000 }, // High mid
-        { minFrequency: 5000, maxFrequency: 10000 } // High
-    ];
-
-    const sphereParams = {
-        enabled: index === 0,
-        sphereRadius: 1.0,
-        innerSphereRadius: 0.25,
-        rotationSpeed: 0.001,
-        rotationSpeedMin: 0,
-        rotationSpeedMax: 0.065,
-        rotationSmoothness: 0.3,
-        particleCount: 20000,
-        particleSize: 0.003,
-        particleLifetime: 3.0,
-        minFrequency: defaultFrequencies[index]?.minFrequency || 0,
-        maxFrequency: defaultFrequencies[index]?.maxFrequency || 22050,
-        minFrequencyBeat: defaultFrequencies[index]?.minFrequency || 0,
-        maxFrequencyBeat: defaultFrequencies[index]?.maxFrequency || 22050,
-        noiseScale: 4.0,
-        dynamicNoiseScale: true,
-        minNoiseScale: 0.5,       
-        maxNoiseScale: 5.0,       
-        noiseStep: 0.2,           
-        noiseSpeed: 0.1,
-        turbulenceStrength: 0.005,
-        colorStart: '#ff3366',
-        colorEnd: '#3366ff',
-        volumeChangeThreshold: 0.1,
-        peakSensitivity: 1.1,
-        beatThreshold: 200,
-        baseWaveStrength: 20.0,
-        beatStrength: 0.01,
-        gainMultiplier: 1
-    };
-
-    const sphereGeometry = new THREE.BufferGeometry();
-    const spherePositions = new Float32Array(sphereParams.particleCount * 3);
-    const sphereColors = new Float32Array(sphereParams.particleCount * 3);
-    const velocities = new Float32Array(sphereParams.particleCount * 3);
-    const basePositions = new Float32Array(sphereParams.particleCount * 3);
-    const lifetimes = new Float32Array(sphereParams.particleCount);
-    const maxLifetimes = new Float32Array(sphereParams.particleCount);
-    const beatEffects = new Float32Array(sphereParams.particleCount);
-
-    // Init particles
-    for (let i = 0; i < sphereParams.particleCount; i++) {
-        const i3 = i * 3;
-        const radius = THREE.MathUtils.lerp(0, sphereParams.sphereRadius, sphereParams.innerSphereRadius);
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const r = Math.cbrt(Math.random()) * radius;
-
-        const x = r * Math.sin(phi) * Math.cos(theta);
-        const y = r * Math.sin(phi) * Math.sin(theta);
-        const z = r * Math.cos(phi);
-
-        spherePositions[i3] = x;
-        spherePositions[i3 + 1] = y;
-        spherePositions[i3 + 2] = z;
-
-        basePositions[i3] = x;
-        basePositions[i3 + 1] = y;
-        basePositions[i3 + 2] = z;
-
-        velocities[i3] = 0;
-        velocities[i3 + 1] = 0;
-        velocities[i3 + 2] = 0;
-
-        const lt = Math.random() * sphereParams.particleLifetime;
-        lifetimes[i] = lt;
-        maxLifetimes[i] = lt;
-
-        beatEffects[i] = 0;
+    loadPresets() {
+        this.updatePresetSelect();
     }
-
-    sphereGeometry.setAttribute('position', new THREE.BufferAttribute(spherePositions, 3));
-    sphereGeometry.setAttribute('color', new THREE.BufferAttribute(sphereColors, 3));
-
-    const sphereMaterial = new THREE.PointsMaterial({
-        size: sphereParams.particleSize,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.8,
-        blending: THREE.AdditiveBlending,
-        fog: true
-    });
-
-    const sphereParticleSystem = new THREE.Points(sphereGeometry, sphereMaterial);
-    scene.add(sphereParticleSystem);
-
-    // Sphere visibility `enabled`
-    sphereParticleSystem.visible = sphereParams.enabled;
-
-    const sphere = {
-        index: index,
-        params: sphereParams,
-        geometry: sphereGeometry,
-        colors: sphereColors,
-        material: sphereMaterial,
-        particleSystem: sphereParticleSystem,
-        positions: spherePositions,
-        velocities: velocities,
-        basePositions: basePositions,
-        lifetimes: lifetimes,
-        maxLifetimes: maxLifetimes,
-        beatEffects: beatEffects,
-        lastNoiseScale: sphereParams.noiseScale,
-        lastValidVolume: 0,
-        lastRotationSpeed: 0
-    };
-
-    sphere.peakDetection = {
-        energyHistory: [],
-        historyLength: 30,
-        lastPeakTime: 0,
-        minTimeBetweenPeaks: 200
-    };
-
-    // Colors update
-    updateColorsForSphere(sphereParams, sphereGeometry, sphereColors);
-
-    // GUI folder
-    const sphereFolder = mainGui.addFolder('Sphere ' + (index + 1));
-
-    sphereFolder.add(sphere.params, 'particleCount', 1000, 100000).step(1000)
-        .onChange(() => {
-            const {
-                newPositions,
-                newColors,
-                newVelocities,
-                newBasePositions,
-                newLifetimes,
-                newMaxLifetimes,
-                newBeatEffects
-            } = reinitializeParticlesForSphere(
-                sphere, sphere.params, sphere.geometry
-            );
-
-            sphere.positions = newPositions;
-            sphere.colors = newColors;
-            sphere.velocities = newVelocities;
-            sphere.basePositions = newBasePositions;
-            sphere.lifetimes = newLifetimes;
-            sphere.maxLifetimes = newMaxLifetimes;
-            sphere.beatEffects = newBeatEffects;
-
-            sphere.geometry.attributes.position.needsUpdate = true;
-            sphere.geometry.attributes.color.needsUpdate = true;
+    
+    updatePresetSelect() {
+        const presetSelect = document.getElementById('presetSelect');
+        if (!presetSelect) return;
+        
+        const presets = JSON.parse(localStorage.getItem('narratorOrbPresets') || '{}');
+        
+        presetSelect.innerHTML = '<option value="">Select preset...</option>';
+        Object.keys(presets).forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            presetSelect.appendChild(option);
         });
+    }
     
-    sphereFolder.add(sphere.params, 'particleSize', 0.001, 0.01).step(0.001)
-        .onChange(value => {
-            sphere.material.size = value;
-        });
-
-    if (index === 0) { 
-    sphereFolder.add({ copyToOthers: () => {
-        for (let i = 1; i < spheres.length; i++) {
-            Object.assign(spheres[i].params, JSON.parse(JSON.stringify(sphere.params)));
+    exportSettings() {
+        const data = {
+            settings: this.settings,
+            presets: JSON.parse(localStorage.getItem('narratorOrbPresets') || '{}'),
+            uiState: JSON.parse(localStorage.getItem('narratorOrbUIState') || '{}')
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'narrator-orb-settings.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    async importSettings(file) {
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
             
-            const {
-                newPositions,
-                newColors,
-                newVelocities,
-                newBasePositions,
-                newLifetimes,
-                newMaxLifetimes,
-                newBeatEffects
-            } = reinitializeParticlesForSphere(
-                spheres[i], spheres[i].params, spheres[i].geometry
-            );
-
-            spheres[i].positions = newPositions;
-            spheres[i].colors = newColors;
-            spheres[i].velocities = newVelocities;
-            spheres[i].basePositions = newBasePositions;
-            spheres[i].lifetimes = newLifetimes;
-            spheres[i].maxLifetimes = newMaxLifetimes;
-            spheres[i].beatEffects = newBeatEffects;
-
-            spheres[i].geometry.attributes.position.needsUpdate = true;
-            spheres[i].geometry.attributes.color.needsUpdate = true;
-
-
-            spheres[i].particleSystem.visible = spheres[i].params.enabled;
-
-            const targetFolder = mainGui.__folders[`Sphere ${i + 1}`];
-            if (targetFolder) {
-                targetFolder.__controllers.forEach(controller => controller.updateDisplay());
+            if (data.settings) {
+                this.settings = { ...data.settings };
+                this.applySettings();
             }
-        }
-        mainGui.updateDisplay();
-        console.log('Parameters copied from Sphere 1 to Spheres 2-5.');
-    }}, 'copyToOthers').name('Copy to Spheres 2-5');
-}
-    sphereFolder.add(sphere.params, 'particleLifetime', 1, 20).step(1);
-
-    sphereFolder.add(sphere.params, 'sphereRadius', 0.05, 3.0).step(0.05);
-    sphereFolder.add(sphere.params, 'innerSphereRadius', 0, 1).step(0.01)
-        .onChange(() => {
-            const {
-                newPositions,
-                newColors,
-                newVelocities,
-                newBasePositions,
-                newLifetimes,
-                newMaxLifetimes,
-                newBeatEffects
-            } = reinitializeParticlesForSphere(sphere, sphere.params, sphere.geometry);
-
-            sphere.positions = newPositions;
-            sphere.colors = newColors;
-            sphere.velocities = newVelocities;
-            sphere.basePositions = newBasePositions;
-            sphere.lifetimes = newLifetimes;
-            sphere.maxLifetimes = newMaxLifetimes;
-            sphere.beatEffects = newBeatEffects;
             
-            sphere.geometry.attributes.position.needsUpdate = true;
-            sphere.geometry.attributes.color.needsUpdate = true;
-        });
-
-    sphereFolder.add(sphere.params, 'rotationSpeedMin', 0, 0.02).step(0.001);
-    sphereFolder.add(sphere.params, 'rotationSpeedMax', 0, 0.1).step(0.001);
-    sphereFolder.add(sphere.params, 'rotationSmoothness', 0.01, 1).step(0.01);
-    sphereFolder.add(sphere.params, 'volumeChangeThreshold', 0.01, 0.2).step(0.01);
+            if (data.presets) {
+                localStorage.setItem('narratorOrbPresets', JSON.stringify(data.presets));
+                this.updatePresetSelect();
+            }
+            
+            if (data.uiState) {
+                localStorage.setItem('narratorOrbUIState', JSON.stringify(data.uiState));
+            }
+            
+            alert('Settings imported successfully!');
+        } catch (error) {
+            console.error('Import failed:', error);
+            alert('Failed to import settings. Please check the file format.');
+        }
+    }
     
-    sphereFolder.add(sphereParams, 'minFrequency', 0, 22050).step(1).name('Min Frequency (Hz)')
-        .onChange(value => sphereParams.minFrequency = value);
-    sphereFolder.add(sphereParams, 'maxFrequency', 0, 22050).step(1).name('Max Frequency (Hz)')
-        .onChange(value => sphereParams.maxFrequency = value);
-
-    // GUI defaults
-    const minFreqController = sphereFolder.__controllers.find(c => c.property === 'minFrequency');
-    const maxFreqController = sphereFolder.__controllers.find(c => c.property === 'maxFrequency');
-    if (minFreqController) minFreqController.setValue(sphereParams.minFrequency);
-    if (maxFreqController) maxFreqController.setValue(sphereParams.maxFrequency);
-
-    sphereFolder.add(sphere.params, 'noiseScale', 0.1, 10.0).step(0.1);
-    sphereFolder.add(sphere.params, 'minNoiseScale', 0.0, 10.0).step(0.1).name('Min NoiseScale')
-        .onChange(() => {
-            if (sphere.params.minNoiseScale > sphere.params.maxNoiseScale) {
-                sphere.params.minNoiseScale = sphere.params.maxNoiseScale;
-            }
-            updateNoiseStep(sphere.params);
-        });
-    sphereFolder.add(sphere.params, 'maxNoiseScale', 0.0, 10.0).step(0.1).name('Max NoiseScale')
-        .onChange(() => {
-            if (sphere.params.maxNoiseScale < sphere.params.minNoiseScale) {
-                sphere.params.maxNoiseScale = sphere.params.minNoiseScale;
-            }
-            updateNoiseStep(sphere.params);
-        });
-    sphereFolder.add(sphere.params, 'noiseStep', 0.1, 5.0).step(0.1).name('Noise Step')
-        .onChange(() => {
-            updateNoiseStep(sphere.params);
-        });
-    function updateNoiseStep(params) {
-        const range = params.maxNoiseScale - params.minNoiseScale;
-        if (params.noiseStep > range) {
-            params.noiseStep = range / 2;
-        }
+    handleResize() {
+        if (!this.renderer || !this.camera) return;
+        
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
-    sphereFolder.add(sphere.params, 'noiseSpeed', 0, 1.0).step(0.01);
-
-    sphereFolder.add(sphere.params, 'peakSensitivity', 1.01, 2).step(0.01);
-    sphereFolder.add(sphere.peakDetection, 'historyLength', 10, 1200).step(1).name('History Length');
-    sphereFolder.add(sphere.peakDetection, 'minTimeBetweenPeaks', 50, 5000).step(10).name('Min Time Between Peaks');
-
-    sphereFolder.add(sphere.params, 'turbulenceStrength', 0, 0.03).step(0.0001);
-    sphereFolder.addColor(sphere.params, 'colorStart')
-        .onChange(() => updateColorsForSphere(sphere.params, sphere.geometry, sphere.colors));
-    sphereFolder.addColor(sphere.params, 'colorEnd')
-        .onChange(() => updateColorsForSphere(sphere.params, sphere.geometry, sphere.colors));
-
-    sphereFolder.add(sphereParams, 'minFrequencyBeat', 0, 22050).step(1).name('Min Freq Beat (Hz)')
-        .onChange(value => sphereParams.minFrequencyBeat = value);
-    sphereFolder.add(sphereParams, 'maxFrequencyBeat', 0, 22050).step(1).name('Max Freq Beat (Hz)')
-        .onChange(value => sphereParams.maxFrequencyBeat = value);
-
-    sphereFolder.add(sphere.params, 'beatThreshold', 50, 255).step(1);
-    sphereFolder.add(sphere.params, 'beatStrength', 0, 0.05).step(0.001);
-    sphereFolder.add(sphere.params, 'gainMultiplier', 1.0, 3.0).step(0.1);
-    sphereFolder.add(sphere.params, 'dynamicNoiseScale');
-    sphereFolder.add(sphere.params, 'enabled').onChange(value => {
-        sphere.particleSystem.visible = value;
-    });
-
-    sphereFolder.close();
-
-    return sphere;
-}
-
-for (let i = 0; i < 5; i++) {
-    const sphereVis = createSphereVisualization(i);
-    spheres.push(sphereVis);
-}
-
-// Saving defaults spheres
-spheres.forEach(sphere => {
-    defaultParams.push(JSON.parse(JSON.stringify(sphere.params)));
-});
-
-// Init presets
-updatePresetOptions();
-
-// Only sphere 1 allowed
-spheres.forEach((sphere, index) => {
-    if (index !== 0) {
-        sphere.params.enabled = false;
-        sphere.particleSystem.visible = false;
-    }
-});
-
-function getSmoothVolume(params, lastValidVolume, volumeChangeThreshold) {
-    if (!analyser) return { volume: 0, shouldUpdate: false };
-
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    analyser.getByteFrequencyData(dataArray);
-
-    let sum = 0;
-    for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
-    }
-    const average = sum / bufferLength;
-    const normalizedVolume = average / 255;
-
-    let shouldUpdate = true;
-    if (lastValidVolume === 0) {
-        lastValidVolume = normalizedVolume;
-    } else {
-        const change = Math.abs(normalizedVolume - lastValidVolume);
-        if (change <= volumeChangeThreshold) {
-            lastValidVolume = normalizedVolume;
-        } else {
-            shouldUpdate = false;
-        }
-    }
-
-    return { volume: lastValidVolume, shouldUpdate };
-}
-
-let lastTime = 0;
-function animate(currentTime) {
-    requestAnimationFrame(animate);
     
-    const deltaTime = lastTime ? (currentTime - lastTime) / 1000 : 0;
-    lastTime = currentTime;
-
-    // Beat wave update
-    beatManager.update(deltaTime);
-
-    // Sphere update
-    spheres.forEach(sphere => {
-        if (!sphere.params.enabled) return;
-
-        const audioData = getAudioData(sphere);
-
-        if (audioData.peakDetected) {
-            if (sphere.params.dynamicNoiseScale) {
-                sphere.params.noiseScale = generateNewNoiseScale(
-                    sphere.params,
-                    sphere.lastNoiseScale
-                );
-                sphere.lastNoiseScale = sphere.params.noiseScale;
-            }
+    animate(currentTime = 0) {
+        this.animationId = requestAnimationFrame((time) => this.animate(time));
+        
+        const deltaTime = this.lastTime ? Math.min((currentTime - this.lastTime) / 1000, 0.1) : 0;
+        this.lastTime = currentTime;
+        
+        if (this.starfield?.material?.uniforms) {
+            this.starfield.material.uniforms.time.value = currentTime * 0.001;
         }
-
-        const { params, geometry, positions, velocities, basePositions, lifetimes, maxLifetimes, beatEffects } = sphere;
-
-        // Beat detection sphere
-        const beatDetected = audioData.rangeEnergyBeat > params.beatThreshold;
-
-        // Beat wave sphere
-        if (beatDetected && !beatManager.isWaveActive && params.beatStrength > 0) {
-            beatManager.triggerWave(audioData.rangeEnergyBeat);
-        }
-
-        // Update particles
-        const pc = params.particleCount;
-        for (let i = 0; i < pc; i++) {
-            const i3 = i * 3;
-
-            let x = positions[i3];
-            let y = positions[i3 + 1];
-            let z = positions[i3 + 2];
-
-            let vx = velocities[i3];
-            let vy = velocities[i3 + 1];
-            let vz = velocities[i3 + 2];
-
-            let lt = lifetimes[i];
-            let be = beatEffects[i];
-
-            // Update lifetime
-            lt -= deltaTime;
-
-            // Noise calc
-            const ns = params.noiseScale;
-            const speed = params.noiseSpeed;
-            const timeFactor = currentTime * 0.001;
-            const noiseX = noise.noise3D(x * ns + timeFactor * speed, y * ns, z * ns);
-            const noiseY = noise.noise3D(x * ns, y * ns + timeFactor * speed, z * ns);
-            const noiseZ = noise.noise3D(x * ns, y * ns, z * ns + timeFactor * speed);
-
-            vx += noiseX * params.turbulenceStrength;
-            vy += noiseY * params.turbulenceStrength;
-            vz += noiseZ * params.turbulenceStrength;
-
-            // Beat effect
-            if (beatDetected) {
-                be = 1.0;
-            }
-            be *= 0.95;
-            if (be > 0.01) {
-                // směr z centra
-                const dist = Math.sqrt(x*x + y*y + z*z);
-                if (dist > 0) {
-                    const dx = x / dist;
-                    const dy = y / dist;
-                    const dz = z / dist;
-
-                    const beatForce = be * params.beatStrength;
-                    vx += dx * beatForce;
-                    vy += dy * beatForce;
-                    vz += dz * beatForce;
+        
+        if (this.narratorOrb) {
+            this.narratorOrb.update(deltaTime);
+            
+            if (this.reflectionGroup && this.narratorOrb.orbGroup) {
+                this.reflectionGroup.rotation.copy(this.narratorOrb.orbGroup.rotation);
+                this.reflectionGroup.rotation.x *= -1;
+                
+                if (this.reflectionCore && this.narratorOrb.nebulaMaterial) {
+                    this.reflectionCore.material.uniforms.time.value = this.narratorOrb.nebulaMaterial.uniforms.time.value;
+                    this.reflectionCore.material.uniforms.audioLevel.value = this.narratorOrb.nebulaMaterial.uniforms.audioLevel.value;
+                    this.reflectionCore.material.uniforms.breathingPhase.value = this.narratorOrb.nebulaMaterial.uniforms.breathingPhase.value;
+                }
+                
+                if (this.reflectionTendrils && this.narratorOrb.tendrilMaterial) {
+                    this.reflectionTendrils.material.uniforms.time.value = this.narratorOrb.tendrilMaterial.uniforms.time.value;
+                    this.reflectionTendrils.material.uniforms.audioLevel.value = this.narratorOrb.tendrilMaterial.uniforms.audioLevel.value;
                 }
             }
-
-            // Update positions
-            x += vx;
-            y += vy;
-            z += vz;
-
-            // Slowing speed
-            vx *= 0.98;
-            vy *= 0.98;
-            vz *= 0.98;
-
-            // Radius control
-            const dist = Math.sqrt(x*x + y*y + z*z);
-            if (dist > params.sphereRadius) {
-                const overflow = dist - params.sphereRadius;
-                const pullback = overflow * 0.1;
-                if (dist > 0) {
-                    const dx = x / dist;
-                    const dy = y / dist;
-                    const dz = z / dist;
-                    x -= dx * pullback;
-                    y -= dy * pullback;
-                    z -= dz * pullback;
-                }
-                vx *= 0.9;
-                vy *= 0.9;
-                vz *= 0.9;
-            }
-
-            // Reset of dead particles
-            if (lt <= 0) {
-                const radius = THREE.MathUtils.lerp(0, params.sphereRadius, params.innerSphereRadius);
-                const theta = Math.random() * Math.PI * 2;
-                const phi = Math.acos(2 * Math.random() - 1);
-                const rr = Math.cbrt(Math.random()) * radius;
-
-                x = rr * Math.sin(phi) * Math.cos(theta);
-                y = rr * Math.sin(phi) * Math.sin(theta);
-                z = rr * Math.cos(phi);
-
-                vx = 0;
-                vy = 0;
-                vz = 0;
-
-                const newLt = Math.random() * params.particleLifetime;
-                lt = newLt;
-                maxLifetimes[i] = newLt;
-                be = 0;
-
-                basePositions[i3] = x;
-                basePositions[i3 + 1] = y;
-                basePositions[i3 + 2] = z;
-            }
-
-            positions[i3] = x;
-            positions[i3 + 1] = y;
-            positions[i3 + 2] = z;
-
-            velocities[i3] = vx;
-            velocities[i3 + 1] = vy;
-            velocities[i3 + 2] = vz;
-
-            lifetimes[i] = lt;
-            beatEffects[i] = be;
         }
-
-        geometry.attributes.position.needsUpdate = true;
-
-        // Dyn rotation
-        const { volume: smoothVolume, shouldUpdate } = getSmoothVolume(
-            params, 
-            sphere.lastValidVolume, 
-            params.volumeChangeThreshold
-        );
-
-        if (shouldUpdate) {
-            const targetRotationSpeed = THREE.MathUtils.lerp(
-                params.rotationSpeedMin,
-                params.rotationSpeedMax,
-                smoothVolume
-            );
-            sphere.lastRotationSpeed = params.rotationSpeed + 
-                (targetRotationSpeed - params.rotationSpeed) * 
-                params.rotationSmoothness;
-        }
-
-        sphere.particleSystem.rotation.y += sphere.lastRotationSpeed;
-
-        // Saving volume
-        if (shouldUpdate) sphere.lastValidVolume = smoothVolume;
-    });
-
-    renderer.render(scene, camera);
-    updateTimeline();
-}
-
-window.addEventListener('resize', () => {
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-});
-
-let controlsVisible = true; // Stav viditelnosti
-
-// Switching control elements
-function toggleControlsVisibility() {
-    controlsVisible = !controlsVisible;
-
-    const allControls = document.querySelectorAll(
-        '.controls-container, .dg.main, #audioControls, #presetContainer, #songSelect, #playPause, input[type="range"], button, select, input[type="text"]'
-    );
-
-    allControls.forEach(control => {
-        control.style.display = controlsVisible ? 'block' : 'none';
-    });
-}
-
-// Event listener on click
-document.addEventListener('click', (event) => {
-    const clickedElement = event.target;
-    if (!clickedElement.closest('.controls-container') && 
-        !clickedElement.closest('.dg.main') &&
-        !clickedElement.closest('#audioControls') &&
-        !clickedElement.closest('#presetContainer') &&
-        !clickedElement.closest('#songSelect') &&
-        !clickedElement.closest('#playPause') &&
-        !clickedElement.closest('input[type="range"]') &&
-        !clickedElement.closest('button') &&
-        !clickedElement.closest('select') &&
-        !clickedElement.closest('input[type="text"]')) {
-        toggleControlsVisibility();
+        
+        this.renderer.render(this.scene, this.camera);
     }
-});
+    
+    destroy() {
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+        }
+        
+        if (this.narratorOrb) {
+            this.narratorOrb.destroy();
+        }
+        
+        if (this.reflectionGroup) {
+            this.scene.remove(this.reflectionGroup);
+        }
+        
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            if (this.currentAudio.src && this.currentAudio.src.startsWith('blob:')) {
+                URL.revokeObjectURL(this.currentAudio.src);
+            }
+        }
+        
+        if (this.audioContext) {
+            this.audioContext.close();
+        }
+        
+        this.clearAutoHideTimeout();
+    }
+}
 
-document.querySelectorAll('.controls-container, .dg.main, #audioControls, #presetContainer').forEach(control => {
-    control.style.position = 'absolute';
-});
+// Initialize the application
+const app = new AudiobookNarratorVisualizer();
 
-console.log('Starting animation');
-initAudio();
-animate(0);
+// Handle page unload
+window.addEventListener('beforeunload', () => {
+    app.destroy();
+});
