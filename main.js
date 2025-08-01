@@ -506,10 +506,7 @@ class AudiobookNarratorVisualizer {
         };
         
         console.log("Creating NarratorOrb with config:", orbConfig);
-        console.log("Scene:", this.scene);
-        console.log("Camera:", this.camera);
-        console.log("Renderer:", this.renderer);
-        console.log("Analyser:", this.analyser);
+        console.log("Analyser available:", !!this.analyser);
         
         try {
             this.narratorOrb = new NarratorOrb(
@@ -519,24 +516,20 @@ class AudiobookNarratorVisualizer {
                 this.analyser,
                 orbConfig
             );
-            
             console.log("NarratorOrb created successfully:", this.narratorOrb);
-            
-            // Center the orb perfectly in view like the example
-            if (this.narratorOrb.orbGroup) {
-                console.log("Setting orb position and scale...");
-                this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
-                this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
-            } else {
-                console.error("NarratorOrb orbGroup is null!");
-            }
-            
-            this.createOrbReflection();
-            
-            console.log("NarratorOrb initialized with analyser:", !!this.analyser);
         } catch (error) {
             console.error("Error creating NarratorOrb:", error);
         }
+        
+        // Center the orb perfectly in view like the example
+        if (this.narratorOrb.orbGroup) {
+            this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
+            this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
+        }
+        
+        this.createOrbReflection();
+        
+        console.log("NarratorOrb initialized with analyser:", !!this.analyser);
     }
     
     createOrbReflection() {
@@ -1252,7 +1245,11 @@ class AudiobookNarratorVisualizer {
         }
         
         if (this.narratorOrb) {
-            this.narratorOrb.update(deltaTime);
+            try {
+                this.narratorOrb.update(deltaTime);
+            } catch (error) {
+                console.error("Error updating NarratorOrb:", error);
+            }
             
             if (this.reflectionGroup && this.narratorOrb.orbGroup) {
                 this.reflectionGroup.rotation.copy(this.narratorOrb.orbGroup.rotation);

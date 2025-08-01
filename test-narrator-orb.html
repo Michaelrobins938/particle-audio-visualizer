@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NarratorOrb Test</title>
+    <style>
+        body { margin: 0; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.150.1/build/three.module.js';
+        import { NarratorOrb } from './NarratorOrb.js';
+
+        console.log('Testing NarratorOrb...');
+
+        // Create basic scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        camera.position.z = 5;
+
+        // Test NarratorOrb creation
+        try {
+            console.log('Creating NarratorOrb...');
+            const orb = new NarratorOrb(scene, camera, renderer, null, {
+                coreParticleCount: 1000,
+                tendrilParticleCount: 500,
+                coreRadius: 1.0,
+                tendrilRadius: 2.0
+            });
+            console.log('NarratorOrb created successfully:', orb);
+            console.log('Orb group:', orb.orbGroup);
+            console.log('Nebula core:', orb.nebulaCore);
+            console.log('Nebula tendrils:', orb.nebulaTendrils);
+        } catch (error) {
+            console.error('Error creating NarratorOrb:', error);
+        }
+
+        // Simple animation
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html> 
