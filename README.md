@@ -1,60 +1,68 @@
-# Particula
+# Audiobook Narrator Orb - Cinematic Visualizer
 
-Particula is an interactive music-driven particle visualizer built with WebGL (Three.js).  
-It reacts to sound, frequency, and rhythm to create a dynamic audiovisual experience in 3D space.
+A stunning 3D particle orb visualizer that reacts to audio in real-time. Upload your audio files and watch as the orb transforms with the music, creating a mesmerizing cinematic experience.
 
-## Demo
+## 🚀 Quick Deploy
 
-Demo video: https://youtu.be/AroTkLpfSSA  
-(Add the correct link once the video is uploaded.)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FMichaelrobins938%2Fparticle-audio-visualizer)
 
-## Running locally
+## ✨ Features
 
-Requires Node.js: https://nodejs.org
+- **Real-time Audio Analysis:** The orb reacts to your audio frequencies
+- **Beautiful Particle Effects:** 50,000+ particles creating stunning visualizations
+- **Drag & Drop Upload:** Simply drag your audio files to upload
+- **Customizable Settings:** Adjust gain, particles, intensity, and volume
+- **Auto-hide UI:** Clean interface that hides when not in use
+- **Preset System:** Save and load your favorite configurations
+- **Keyboard Shortcuts:** Space to play/pause, T to toggle UI
 
-1. Open a terminal in the project folder
-2. Run a local server:
+## 🎵 Supported Audio Formats
 
-    npx serve .
+- MP3
+- WAV
+- OGG
+- M4A
+- AAC
 
-3. Open this address in your browser:
+## 🎮 Controls
 
-    http://localhost:3000
+- **Space:** Play/Pause audio
+- **T:** Toggle UI visibility
+- **Ctrl+H:** Toggle auto-hide UI
+- **Mouse:** Click progress bar to seek
 
-Alternatively, use the provided run.bat file (Windows only).
+## 🛠️ Local Development
 
-## Features
+```bash
+# Install dependencies
+npm install
 
-- Five independent particle spheres reacting to different frequency bands
-- Noise and turbulence dynamics influenced by audio input
-- Beat detection with reactive wave effects
-- Switch between audio player and microphone input
-- Real-time parameter editing via built-in GUI
-- Preset system (save, load, export, import)
+# Start development server
+npm start
 
-## Collaboration
+# Run linting
+npm run lint
+```
 
-- This is the official repository of the Particula project.  
-- Feel free to experiment, modify, and contribute.
-- If you publish a fork or derivative version, please acknowledge the original and do not use the name "Particula" without permission.
-- Open a pull request, start a discussion, or fork the repo and experiment. If you build something cool, we’d love to see it – especially presets or entirely new directions.
-- Share your presets: https://github.com/Humprt/particula/issues/3
+## 📁 Project Structure
 
-## Ideas for Future Development
+```
+├── index.html          # Main application
+├── main.js            # Core visualizer logic
+├── NarratorOrb.js     # Particle orb implementation
+├── shaders/           # GLSL shader files
+├── package.json       # Project configuration
+└── vercel.json        # Vercel deployment config
+```
 
-- Add a moving camera to enhance depth and immersion.
-- Decouple the spheres from the center – let them float freely in 3D space.
-- Try alternative shapes: rings, ellipsoids, toruses.
-- Make the noise animation slow down or sync with tempo.
-- Assign more particles to lower frequencies (logarithmic sound spectrum distribution).
+## 🌟 Live Demo
 
-## License
+Visit the deployed version: [Your Vercel URL will appear here after deployment]
 
-MIT © 2025 Humprt Pum  
-Free to use and modify with attribution.
+## 📝 License
 
-## Credits
+MIT License - feel free to use and modify!
 
-Built by a human-AI duo:  
-**Humprt (vibe-coder)** and **Caroline (ChatGPT 4o)**  
-Born from long nights, experimental tweaks, and love for sound and visual poetry.
+---
+
+**Created with ❤️ using Three.js and Web Audio API**
