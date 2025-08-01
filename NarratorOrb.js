@@ -253,6 +253,7 @@ const tendrilVertexShader = `
 
     uniform float time;
     uniform float audioLevel;
+    uniform float breathingPhase;
 
     // Same noise functions as above...
     vec3 mod289(vec3 x) {
@@ -410,8 +411,6 @@ const tendrilFragmentShader = `
 
 class NarratorOrb {
     constructor(scene, camera, renderer, analyserNode = null, config = {}) {
-        console.log("NarratorOrb constructor called with:", { scene, camera, renderer, analyserNode, config });
-        
         this.scene = scene;
         this.camera = camera;
         this.renderer = renderer;
@@ -426,51 +425,52 @@ class NarratorOrb {
             ...config
         };
 
-        console.log("NarratorOrb config:", this.config);
-
         this.frequencyData = new Uint8Array(this.analyserNode ? this.analyserNode.frequencyBinCount : 1024);
-        console.log("Frequency data array size:", this.frequencyData.length);
 
         this.time = 0;
         this.breathingPhase = 0;
         this.lastAudioLevel = 0;
 
-        console.log("Creating nebula orb...");
         this.createNebulaOrb();
-        console.log("NarratorOrb creation complete");
     }
 
     createNebulaOrb() {
-        // Main nebula material with balanced intensity
-        this.nebulaMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                audioLevel: { value: 0 },
-                breathingPhase: { value: 0 },
-                intensity: { value: 1.8 } // Back to balanced intensity
-            },
-            vertexShader: nebulaVertexShader,
-            fragmentShader: nebulaFragmentShader,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            vertexColors: true
-        });
+        try {
+            // Main nebula material with balanced intensity
+            this.nebulaMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    audioLevel: { value: 0 },
+                    breathingPhase: { value: 0 },
+                    intensity: { value: 1.8 } // Back to balanced intensity
+                },
+                vertexShader: nebulaVertexShader,
+                fragmentShader: nebulaFragmentShader,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                vertexColors: true
+            });
 
-        // Tendril material with balanced intensity
-        this.tendrilMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                audioLevel: { value: 0 },
-                intensity: { value: 1.5 } // Back to balanced for subtle magenta wisps
-            },
-            vertexShader: tendrilVertexShader,
-            fragmentShader: tendrilFragmentShader,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            vertexColors: true
-        });
+            // Tendril material with balanced intensity
+            this.tendrilMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    audioLevel: { value: 0 },
+                    breathingPhase: { value: 0 },
+                    intensity: { value: 1.5 } // Back to balanced for subtle magenta wisps
+                },
+                vertexShader: tendrilVertexShader,
+                fragmentShader: tendrilFragmentShader,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                vertexColors: true
+            });
+        } catch (error) {
+            console.error('Error creating shader materials:', error);
+            throw error;
+        }
 
         this.createCoreNebula();
         this.createTendrils();
@@ -595,6 +595,7 @@ class NarratorOrb {
         if (this.tendrilMaterial?.uniforms) {
             this.tendrilMaterial.uniforms.time.value = this.time;
             this.tendrilMaterial.uniforms.audioLevel.value = this.lastAudioLevel * 0.7;
+            this.tendrilMaterial.uniforms.breathingPhase.value = this.breathingPhase;
         }
 
         // Slightly more responsive but still gentle rotation

@@ -1264,6 +1264,9 @@ class AudiobookNarratorVisualizer {
                 if (this.reflectionTendrils && this.narratorOrb.tendrilMaterial) {
                     this.reflectionTendrils.material.uniforms.time.value = this.narratorOrb.tendrilMaterial.uniforms.time.value;
                     this.reflectionTendrils.material.uniforms.audioLevel.value = this.narratorOrb.tendrilMaterial.uniforms.audioLevel.value;
+                    if (this.reflectionTendrils.material.uniforms.breathingPhase && this.narratorOrb.tendrilMaterial.uniforms.breathingPhase) {
+                        this.reflectionTendrils.material.uniforms.breathingPhase.value = this.narratorOrb.tendrilMaterial.uniforms.breathingPhase.value;
+                    }
                 }
             }
         }
