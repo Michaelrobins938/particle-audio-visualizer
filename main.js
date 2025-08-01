@@ -44,6 +44,7 @@ class AudiobookNarratorVisualizer {
     
     async init() {
         try {
+            console.log("Starting initialization...");
             this.setupScene();
             this.setupAudio();
             this.setupUI();
@@ -54,6 +55,8 @@ class AudiobookNarratorVisualizer {
             console.log("Initialization complete");
         } catch (error) {
             console.error('Initialization failed:', error);
+            // Show error to user
+            this.showUploadStatus('Failed to initialize application: ' + error.message, true);
         }
     }
     
@@ -486,6 +489,18 @@ class AudiobookNarratorVisualizer {
     initializeNarratorOrb() {
         console.log("Initializing NarratorOrb...");
         
+        // Check if Three.js is available
+        if (typeof THREE === 'undefined') {
+            console.error("THREE.js is not loaded!");
+            return;
+        }
+        
+        // Check if scene is ready
+        if (!this.scene || !this.camera || !this.renderer) {
+            console.error("Scene not ready for NarratorOrb initialization");
+            return;
+        }
+        
         if (this.narratorOrb) {
             console.log("Destroying existing NarratorOrb...");
             this.narratorOrb.destroy();
@@ -517,17 +532,19 @@ class AudiobookNarratorVisualizer {
                 orbConfig
             );
             console.log("NarratorOrb created successfully:", this.narratorOrb);
+            
+            // Center the orb perfectly in view like the example
+            if (this.narratorOrb.orbGroup) {
+                this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
+                this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
+            }
+            
+            this.createOrbReflection();
+            
         } catch (error) {
             console.error("Error creating NarratorOrb:", error);
+            throw error; // Re-throw to be caught by caller
         }
-        
-        // Center the orb perfectly in view like the example
-        if (this.narratorOrb.orbGroup) {
-            this.narratorOrb.orbGroup.position.set(0, 0, 0); // Centered - was (0, 1, 0)
-            this.narratorOrb.orbGroup.scale.setScalar(1.4); // Scale up for more presence
-        }
-        
-        this.createOrbReflection();
         
         console.log("NarratorOrb initialized with analyser:", !!this.analyser);
     }
@@ -564,7 +581,7 @@ class AudiobookNarratorVisualizer {
     }
     
     setupControls() {
-        this.initializeNarratorOrb();
+        // Don't initialize NarratorOrb here - it will be called after scene is ready
         
         // File upload with drag & drop
         const fileInput = document.getElementById('audioFile');
@@ -706,6 +723,15 @@ class AudiobookNarratorVisualizer {
         // Add minimize buttons to panels
         this.addPanelMinimizeButtons();
         
+        // Initialize NarratorOrb after everything is set up
+        try {
+            this.initializeNarratorOrb();
+            console.log("NarratorOrb initialized successfully");
+        } catch (error) {
+            console.error("Failed to initialize NarratorOrb:", error);
+        }
+        
+        // Start animation loop
         this.animate();
         console.log("Controls setup complete");
     }
